@@ -389,6 +389,9 @@ void PurchaseWindow::saveInvoice()
     if (m_itemsTable->rowCount() == 0) { QMessageBox::warning(this, "", QString::fromUtf8("لا توجد مواد")); return; }
 
     double rate = m_exchangeRateEdit->text().toDouble();
+
+    Database::beginTransaction();
+
     int invId = Database::createPurchaseInvoice(
         suppId, m_dateEdit->date(),
         m_purchaseTypeCombo->currentText(),
@@ -396,17 +399,32 @@ void PurchaseWindow::saveInvoice()
         m_currencyCombo->currentText(),
         rate, m_notesEdit->text(), 1);
 
-    if (invId < 0) { QMessageBox::critical(this, "", QString::fromUtf8("فشل الحفظ")); return; }
-
-    for (int r = 0; r < m_itemsTable->rowCount(); r++) {
-        int prodId = m_itemsTable->item(r, 1)->text().toInt();
-        double qty = m_itemsTable->item(r, 3)->text().toDouble();
-        double cost = m_itemsTable->item(r, 6)->text().toDouble();
-        double wsD = m_wholesaleDollarEdit->text().toDouble();
-        double retD = m_retailDollarEdit->text().toDouble();
-        Database::addPurchaseItem(invId, prodId, qty, cost, wsD, retD, 0, 0, "");
+    if (invId < 0) {
+        Database::rollback();
+        QMessageBox::critical(this, "", QString::fromUtf8("فشل الحفظ"));
+        return;
     }
 
+    bool itemsOk = true;
+    for (int r = 0; r < m_itemsTable->rowCount(); r++) {
+        int    prodId = m_itemsTable->item(r, 1)->text().toInt();
+        double qty    = m_itemsTable->item(r, 3)->text().toDouble();
+        double cost   = m_itemsTable->item(r, 6)->text().toDouble();
+        double wsD    = m_wholesaleDollarEdit->text().toDouble();
+        double retD   = m_retailDollarEdit->text().toDouble();
+        if (!Database::addPurchaseItem(invId, prodId, qty, cost, wsD, retD, 0, 0, "")) {
+            itemsOk = false;
+            break;
+        }
+    }
+
+    if (!itemsOk) {
+        Database::rollback();
+        QMessageBox::critical(this, "", QString::fromUtf8("فشل حفظ بنود الفاتورة"));
+        return;
+    }
+
+    Database::commit();
     m_invoiceNoSpin->setValue(invId);
     QMessageBox::information(this, QString::fromUtf8("تم"),
                               QString::fromUtf8("تم حفظ الفاتورة رقم: ") + QString::number(invId));

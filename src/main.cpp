@@ -39,7 +39,6 @@ public:
         userLbl->setFont(QFont("Tahoma", 10));
         m_userEdit = new QLineEdit;
         m_userEdit->setFont(QFont("Tahoma", 11));
-        m_userEdit->setText("1");
         m_userEdit->setAlignment(Qt::AlignCenter);
 
         QLabel *passLbl = new QLabel(QString::fromUtf8("كلمة السر:"));
@@ -47,7 +46,6 @@ public:
         m_passEdit = new QLineEdit;
         m_passEdit->setFont(QFont("Tahoma", 11));
         m_passEdit->setEchoMode(QLineEdit::Password);
-        m_passEdit->setText("1");
         m_passEdit->setAlignment(Qt::AlignCenter);
 
         QHBoxLayout *btnLayout = new QHBoxLayout;

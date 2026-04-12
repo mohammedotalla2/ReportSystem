@@ -16,6 +16,11 @@ public:
     static bool createTables();
     static QSqlDatabase db();
 
+    // Transaction helpers
+    static bool beginTransaction();
+    static bool commit();
+    static bool rollback();
+
     // Settings
     static double getExchangeRate();
     static void setExchangeRate(double rate);
