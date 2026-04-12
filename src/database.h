@@ -5,6 +5,7 @@
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QString>
+#include <QStringList>
 #include <QDebug>
 #include <QDate>
 #include <QVariant>
@@ -22,7 +23,7 @@ public:
     static QString getCompanyName();
     static void setCompanyName(const QString &name);
 
-    // Customers
+    // Customers  (type: 0=زبون, 1=مجهز, 2=زبون ومجهز)
     static QSqlQuery getCustomers();
     static int addCustomer(const QString &name, const QString &region,
                            const QString &address, const QString &phone,
@@ -31,21 +32,28 @@ public:
     static bool updateCustomer(int id, const QString &name, const QString &region,
                                const QString &address, const QString &phone,
                                const QString &notes, double balanceDollar,
-                               double balanceDinar);
+                               double balanceDinar, int type = 0);
     static bool deleteCustomer(int id);
+
+    // Product groups
+    static QStringList getProductGroups();
+    static void ensureProductGroup(const QString &groupName);
 
     // Products
     static QSqlQuery getProducts();
     static int addProduct(const QString &code, const QString &name,
                           const QString &group, const QString &type,
-                          double costPrice, double wholeSaleDollar,
-                          double retailDollar, double wholeSaleDinar,
-                          double retailDinar, int cartoonQty,
-                          double stockQty, double stockCartons);
-    static bool updateProduct(int id, const QString &name, double costPrice,
+                          double costPrice, double costPriceDinar,
+                          double wholeSaleDollar, double retailDollar,
+                          double wholeSaleDinar, double retailDinar,
+                          int cartoonQty, double stockQty, double stockCartons,
+                          double reorderLevel, double exchangeRateAtAdd);
+    static bool updateProduct(int id, const QString &name,
+                              const QString &group, const QString &type,
+                              double costPrice, double costPriceDinar,
                               double wholeSaleDollar, double retailDollar,
                               double wholeSaleDinar, double retailDinar,
-                              double stockQty);
+                              double stockQty, double reorderLevel);
 
     // Sales
     static int createSalesInvoice(int customerId, const QDate &date,

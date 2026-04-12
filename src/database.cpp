@@ -145,9 +145,25 @@ bool Database::createTables()
            "active INTEGER DEFAULT 1)");
     q.exec("INSERT OR IGNORE INTO operators (id,name,username,password) VALUES (1,'Admin','1','1')");
 
+    // Product groups (dynamic categories)
+    q.exec("CREATE TABLE IF NOT EXISTS product_groups ("
+           "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+           "name TEXT UNIQUE NOT NULL)");
+
+    // Migrate existing tables: add new columns if they don't exist
+    q.exec("ALTER TABLE products ADD COLUMN reorder_level REAL DEFAULT 0");
+    q.exec("ALTER TABLE products ADD COLUMN cost_price_dinar REAL DEFAULT 0");
+    q.exec("ALTER TABLE products ADD COLUMN exchange_rate_at_add REAL DEFAULT 1450");
+    // customer type column already supports integer; 2 = زبون ومجهز (no schema change needed)
+
     if (q.lastError().isValid()) {
-        qDebug() << "Table creation error:" << q.lastError().text();
-        return false;
+        // ALTER TABLE errors are expected if columns already exist – clear error
+        QSqlQuery check;
+        check.exec("SELECT reorder_level FROM products LIMIT 1");
+        if (check.lastError().isValid()) {
+            qDebug() << "Table creation error:" << check.lastError().text();
+            return false;
+        }
     }
     return true;
 }
@@ -213,13 +229,15 @@ int Database::addCustomer(const QString &name, const QString &region,
 
 bool Database::updateCustomer(int id, const QString &name, const QString &region,
                                const QString &address, const QString &phone,
-                               const QString &notes, double balanceDollar, double balanceDinar)
+                               const QString &notes, double balanceDollar,
+                               double balanceDinar, int type)
 {
     QSqlQuery q;
-    q.prepare("UPDATE customers SET name=?,region=?,address=?,phone=?,notes=?,balance_dollar=?,balance_dinar=? WHERE id=?");
+    q.prepare("UPDATE customers SET name=?,region=?,address=?,phone=?,notes=?,"
+              "balance_dollar=?,balance_dinar=?,type=? WHERE id=?");
     q.addBindValue(name); q.addBindValue(region); q.addBindValue(address);
     q.addBindValue(phone); q.addBindValue(notes); q.addBindValue(balanceDollar);
-    q.addBindValue(balanceDinar); q.addBindValue(id);
+    q.addBindValue(balanceDinar); q.addBindValue(type); q.addBindValue(id);
     return q.exec();
 }
 
@@ -242,34 +260,65 @@ QSqlQuery Database::getProducts()
 
 int Database::addProduct(const QString &code, const QString &name,
                           const QString &group, const QString &type,
-                          double costPrice, double wholeSaleDollar,
-                          double retailDollar, double wholeSaleDinar,
-                          double retailDinar, int cartoonQty,
-                          double stockQty, double stockCartons)
+                          double costPrice, double costPriceDinar,
+                          double wholeSaleDollar, double retailDollar,
+                          double wholeSaleDinar, double retailDinar,
+                          int cartoonQty, double stockQty, double stockCartons,
+                          double reorderLevel, double exchangeRateAtAdd)
 {
     QSqlQuery q;
     q.prepare("INSERT INTO products (barcode,name,product_group,product_type,cost_price,"
-              "wholesale_dollar,retail_dollar,wholesale_dinar,retail_dinar,"
-              "cartoon_qty,stock_qty,stock_cartons) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
-    q.addBindValue(code); q.addBindValue(name); q.addBindValue(group);
-    q.addBindValue(type); q.addBindValue(costPrice); q.addBindValue(wholeSaleDollar);
-    q.addBindValue(retailDollar); q.addBindValue(wholeSaleDinar); q.addBindValue(retailDinar);
-    q.addBindValue(cartoonQty); q.addBindValue(stockQty); q.addBindValue(stockCartons);
+              "cost_price_dinar,wholesale_dollar,retail_dollar,wholesale_dinar,retail_dinar,"
+              "cartoon_qty,stock_qty,stock_cartons,reorder_level,exchange_rate_at_add) "
+              "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    q.addBindValue(code);          q.addBindValue(name);
+    q.addBindValue(group);         q.addBindValue(type);
+    q.addBindValue(costPrice);     q.addBindValue(costPriceDinar);
+    q.addBindValue(wholeSaleDollar); q.addBindValue(retailDollar);
+    q.addBindValue(wholeSaleDinar);  q.addBindValue(retailDinar);
+    q.addBindValue(cartoonQty);    q.addBindValue(stockQty);
+    q.addBindValue(stockCartons);  q.addBindValue(reorderLevel);
+    q.addBindValue(exchangeRateAtAdd);
     if (q.exec()) return q.lastInsertId().toInt();
+    qDebug() << "addProduct error:" << q.lastError().text();
     return -1;
 }
 
-bool Database::updateProduct(int id, const QString &name, double costPrice,
+bool Database::updateProduct(int id, const QString &name,
+                              const QString &group, const QString &type,
+                              double costPrice, double costPriceDinar,
                               double wholeSaleDollar, double retailDollar,
-                              double wholeSaleDinar, double retailDinar, double stockQty)
+                              double wholeSaleDinar, double retailDinar,
+                              double stockQty, double reorderLevel)
 {
     QSqlQuery q;
-    q.prepare("UPDATE products SET name=?,cost_price=?,wholesale_dollar=?,retail_dollar=?,"
-              "wholesale_dinar=?,retail_dinar=?,stock_qty=? WHERE id=?");
-    q.addBindValue(name); q.addBindValue(costPrice); q.addBindValue(wholeSaleDollar);
-    q.addBindValue(retailDollar); q.addBindValue(wholeSaleDinar); q.addBindValue(retailDinar);
-    q.addBindValue(stockQty); q.addBindValue(id);
+    q.prepare("UPDATE products SET name=?,product_group=?,product_type=?,cost_price=?,"
+              "cost_price_dinar=?,wholesale_dollar=?,retail_dollar=?,"
+              "wholesale_dinar=?,retail_dinar=?,stock_qty=?,reorder_level=? WHERE id=?");
+    q.addBindValue(name);          q.addBindValue(group);
+    q.addBindValue(type);          q.addBindValue(costPrice);
+    q.addBindValue(costPriceDinar); q.addBindValue(wholeSaleDollar);
+    q.addBindValue(retailDollar);  q.addBindValue(wholeSaleDinar);
+    q.addBindValue(retailDinar);   q.addBindValue(stockQty);
+    q.addBindValue(reorderLevel);  q.addBindValue(id);
     return q.exec();
+}
+
+QStringList Database::getProductGroups()
+{
+    QStringList list;
+    QSqlQuery q("SELECT name FROM product_groups ORDER BY name");
+    while (q.next()) list << q.value(0).toString();
+    return list;
+}
+
+void Database::ensureProductGroup(const QString &groupName)
+{
+    if (groupName.trimmed().isEmpty()) return;
+    QSqlQuery q;
+    q.prepare("INSERT OR IGNORE INTO product_groups (name) VALUES (?)");
+    q.addBindValue(groupName.trimmed());
+    q.exec();
 }
 
 int Database::createSalesInvoice(int customerId, const QDate &date,
