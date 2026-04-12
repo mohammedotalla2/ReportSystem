@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SystemSettings</class>
+ <widget class="QDialog" name="SystemSettings">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>900</width><height>650</height></rect></property>
+  <property name="windowTitle"><string>أعداد النظام</string></property>
+  <property name="layoutDirection"><enum>Qt::RightToLeft</enum></property>
+  <layout class="QVBoxLayout" name="rootLayout">
+   <property name="spacing"><number>6</number></property>
+   <property name="margin"><number>8</number></property>
+   <item>
+    <widget class="QTabWidget" name="tabWidget">
+     <property name="layoutDirection"><enum>Qt::RightToLeft</enum></property>
+
+     <!-- TAB 1: General Settings -->
+     <widget class="QWidget" name="tabGeneral">
+      <attribute name="title"><string>الإعدادات العامة</string></attribute>
+      <layout class="QGridLayout" name="settingsGrid">
+       <property name="spacing"><number>8</number></property>
+       <property name="margin"><number>12</number></property>
+       <item row="0" column="1"><widget class="QLabel" name="lblCompanyName"><property name="text"><string>اسم الشركة / المحل:</string></property></widget></item>
+       <item row="0" column="0"><widget class="QLineEdit" name="txtCompanyName"><property name="font"><font><family>Tahoma</family><pointsize>12</pointsize><bold>true</bold></font></property></widget></item>
+       <item row="1" column="1"><widget class="QLabel" name="lblExchRate"><property name="text"><string>سعر صرف الدولار:</string></property></widget></item>
+       <item row="1" column="0">
+        <widget class="QDoubleSpinBox" name="spnExchRate">
+         <property name="minimum"><double>1.000000</double></property>
+         <property name="maximum"><double>99999.000000</double></property>
+         <property name="decimals"><number>0</number></property>
+         <property name="value"><double>1450.000000</double></property>
+         <property name="font"><font><family>Tahoma</family><pointsize>13</pointsize><bold>true</bold></font></property>
+        </widget>
+       </item>
+       <item row="2" column="1"><widget class="QLabel"><property name="text"><string>رصيد الصندوق الأولي $:</string></property></widget></item>
+       <item row="2" column="0"><widget class="QLineEdit" name="txtCashboxDollar"><property name="text"><string>0</string></property></widget></item>
+       <item row="3" column="1"><widget class="QLabel"><property name="text"><string>رصيد الصندوق الأولي دينار:</string></property></widget></item>
+       <item row="3" column="0"><widget class="QLineEdit" name="txtCashboxDinar"><property name="text"><string>0</string></property></widget></item>
+       <item row="4" column="0" colspan="2"><spacer><property name="orientation"><enum>Qt::Vertical</enum></property></spacer></item>
+      </layout>
+     </widget>
+
+     <!-- TAB 2: Customers -->
+     <widget class="QWidget" name="tabCustomers">
+      <attribute name="title"><string>الأشخاص والشركات</string></attribute>
+      <layout class="QVBoxLayout" name="custTabLayout">
+       <property name="spacing"><number>4</number></property>
+       <property name="margin"><number>6</number></property>
+       <item>
+        <widget class="QGroupBox" name="grpCustForm">
+         <property name="title"><string>بيانات الشخص / الشركة</string></property>
+         <layout class="QGridLayout" name="custFormGrid">
+          <property name="spacing"><number>6</number></property>
+          <item row="0" column="3"><widget class="QLabel"><property name="text"><string>الاسم:</string></property></widget></item>
+          <item row="0" column="2"><widget class="QLineEdit" name="txtCustName"/></item>
+          <item row="0" column="1"><widget class="QLabel"><property name="text"><string>المنطقة:</string></property></widget></item>
+          <item row="0" column="0"><widget class="QLineEdit" name="txtCustRegion"/></item>
+          <item row="1" column="3"><widget class="QLabel"><property name="text"><string>الهاتف:</string></property></widget></item>
+          <item row="1" column="2"><widget class="QLineEdit" name="txtCustPhone"/></item>
+          <item row="1" column="1"><widget class="QLabel"><property name="text"><string>العنوان:</string></property></widget></item>
+          <item row="1" column="0"><widget class="QLineEdit" name="txtCustAddress"/></item>
+          <item row="2" column="3"><widget class="QLabel"><property name="text"><string>الرصيد $:</string></property></widget></item>
+          <item row="2" column="2"><widget class="QDoubleSpinBox" name="spnCustBalDollar"><property name="minimum"><double>-999999.000000</double></property><property name="maximum"><double>999999.000000</double></property><property name="decimals"><number>2</number></property></widget></item>
+          <item row="2" column="1"><widget class="QLabel"><property name="text"><string>الرصيد دينار:</string></property></widget></item>
+          <item row="2" column="0"><widget class="QDoubleSpinBox" name="spnCustBalDinar"><property name="minimum"><double>-999999999.000000</double></property><property name="maximum"><double>999999999.000000</double></property><property name="decimals"><number>0</number></property></widget></item>
+          <item row="3" column="3"><widget class="QLabel"><property name="text"><string>النوع:</string></property></widget></item>
+          <item row="3" column="2"><widget class="QComboBox" name="cmbCustType"><item><property name="text"><string>شخص</string></property></item><item><property name="text"><string>شركة</string></property></item></widget></item>
+          <item row="3" column="1"><widget class="QLabel"><property name="text"><string>ملاحظات:</string></property></widget></item>
+          <item row="3" column="0"><widget class="QLineEdit" name="txtCustNotes"/></item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout">
+         <item><widget class="QPushButton" name="btnSaveCust"><property name="text"><string>💾 حفظ</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+         <item><widget class="QPushButton" name="btnNewCust"><property name="text"><string>+ جديد</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+         <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+         <item><widget class="QPushButton" name="btnDeleteCust"><property name="text"><string>✖ حذف</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QTableWidget" name="tblCustomers">
+         <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+         <column><property name="text"><string>الاسم</string></property></column>
+         <column><property name="text"><string>المنطقة</string></property></column>
+         <column><property name="text"><string>الهاتف</string></property></column>
+         <column><property name="text"><string>الرصيد $</string></property></column>
+         <column><property name="text"><string>الرصيد د</string></property></column>
+         <column><property name="text"><string>النوع</string></property></column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+
+     <!-- TAB 3: Products -->
+     <widget class="QWidget" name="tabProducts">
+      <attribute name="title"><string>المواد</string></attribute>
+      <layout class="QVBoxLayout" name="prodTabLayout">
+       <property name="spacing"><number>4</number></property>
+       <property name="margin"><number>6</number></property>
+       <item>
+        <widget class="QGroupBox" name="grpProdForm">
+         <property name="title"><string>بيانات المادة</string></property>
+         <layout class="QGridLayout" name="prodFormGrid">
+          <property name="spacing"><number>6</number></property>
+          <item row="0" column="5"><widget class="QLabel"><property name="text"><string>الباركود:</string></property></widget></item>
+          <item row="0" column="4"><widget class="QLineEdit" name="txtBarcode"/></item>
+          <item row="0" column="3"><widget class="QLabel"><property name="text"><string>اسم المادة:</string></property></widget></item>
+          <item row="0" column="0" colspan="3"><widget class="QLineEdit" name="txtProdName"/></item>
+          <item row="1" column="5"><widget class="QLabel"><property name="text"><string>المجموعة:</string></property></widget></item>
+          <item row="1" column="4"><widget class="QLineEdit" name="txtProdGroup"/></item>
+          <item row="1" column="3"><widget class="QLabel"><property name="text"><string>النوع:</string></property></widget></item>
+          <item row="1" column="2"><widget class="QLineEdit" name="txtProdType"/></item>
+          <item row="2" column="5"><widget class="QLabel"><property name="text"><string>سعر الكلفة:</string></property></widget></item>
+          <item row="2" column="4"><widget class="QDoubleSpinBox" name="spnCost"><property name="maximum"><double>999999.000000</double></property><property name="decimals"><number>3</number></property></widget></item>
+          <item row="2" column="3"><widget class="QLabel"><property name="text"><string>تعبئة الكرتون:</string></property></widget></item>
+          <item row="2" column="2"><widget class="QSpinBox" name="spnCartoon"><property name="minimum"><number>1</number></property><property name="maximum"><number>9999</number></property><property name="value"><number>1</number></property></widget></item>
+          <item row="3" column="5"><widget class="QLabel"><property name="text"><string>جملة $:</string></property></widget></item>
+          <item row="3" column="4"><widget class="QDoubleSpinBox" name="spnWsDollar"><property name="maximum"><double>999999.000000</double></property><property name="decimals"><number>3</number></property></widget></item>
+          <item row="3" column="3"><widget class="QLabel"><property name="text"><string>مفرد $:</string></property></widget></item>
+          <item row="3" column="2"><widget class="QDoubleSpinBox" name="spnRetDollar"><property name="maximum"><double>999999.000000</double></property><property name="decimals"><number>3</number></property></widget></item>
+          <item row="4" column="5"><widget class="QLabel"><property name="text"><string>جملة د:</string></property></widget></item>
+          <item row="4" column="4"><widget class="QDoubleSpinBox" name="spnWsDinar"><property name="maximum"><double>9999999.000000</double></property><property name="decimals"><number>0</number></property></widget></item>
+          <item row="4" column="3"><widget class="QLabel"><property name="text"><string>مفرد د:</string></property></widget></item>
+          <item row="4" column="2"><widget class="QDoubleSpinBox" name="spnRetDinar"><property name="maximum"><double>9999999.000000</double></property><property name="decimals"><number>0</number></property></widget></item>
+          <item row="5" column="5"><widget class="QLabel"><property name="text"><string>الرصيد الأولي:</string></property></widget></item>
+          <item row="5" column="4"><widget class="QDoubleSpinBox" name="spnStock"><property name="minimum"><double>-999999.000000</double></property><property name="maximum"><double>999999.000000</double></property><property name="decimals"><number>2</number></property></widget></item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout">
+         <item><widget class="QPushButton" name="btnSaveProd"><property name="text"><string>💾 حفظ</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+         <item><widget class="QPushButton" name="btnNewProd"><property name="text"><string>+ جديد</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+         <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+         <item><widget class="QPushButton" name="btnDeleteProd"><property name="text"><string>✖ حذف</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QTableWidget" name="tblProducts">
+         <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+         <column><property name="text"><string>الباركود</string></property></column>
+         <column><property name="text"><string>اسم المادة</string></property></column>
+         <column><property name="text"><string>المجموعة</string></property></column>
+         <column><property name="text"><string>الكلفة</string></property></column>
+         <column><property name="text"><string>جملة $</string></property></column>
+         <column><property name="text"><string>مفرد $</string></property></column>
+         <column><property name="text"><string>الرصيد</string></property></column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+
+    </widget>
+   </item>
+
+   <!-- Bottom buttons -->
+   <item>
+    <layout class="QHBoxLayout">
+     <item><widget class="QPushButton" name="btnSave"><property name="text"><string>💾 حفظ الإعدادات</string></property><property name="minimumHeight"><number>36</number></property><property name="font"><font><family>Tahoma</family><pointsize>11</pointsize><bold>true</bold></font></property></widget></item>
+     <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+     <item><widget class="QPushButton" name="btnClose"><property name="text"><string>✖ إغلاق</string></property><property name="minimumHeight"><number>36</number></property><property name="font"><font><family>Tahoma</family><pointsize>11</pointsize><bold>true</bold></font></property></widget></item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CustomerBalances</class>
+ <widget class="QDialog" name="CustomerBalances">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>560</width><height>420</height></rect></property>
+  <property name="windowTitle"><string>ارصدة الزبائن</string></property>
+  <property name="layoutDirection"><enum>Qt::RightToLeft</enum></property>
+  <layout class="QVBoxLayout" name="rootLayout">
+   <property name="spacing"><number>14</number></property>
+   <property name="margin"><number>16</number></property>
+   <!-- Filter 1: منطقة معينة -->
+   <item>
+    <layout class="QHBoxLayout">
+     <item><widget class="QComboBox" name="cmbRegion"><property name="minimumWidth"><number>160</number></property><item><property name="text"><string>-- الكل --</string></property></item></widget></item>
+     <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+     <item><widget class="QCheckBox" name="chkRegion"/></item>
+     <item><widget class="QPushButton" name="btnRegion"><property name="text"><string>لمنطقة معينة</string></property><property name="minimumSize"><size><width>130</width><height>36</height></size></property><property name="font"><font><family>Tahoma</family><pointsize>11</pointsize><bold>true</bold></font></property></widget></item>
+    </layout>
+   </item>
+   <!-- Filter 2: نوع معين -->
+   <item>
+    <layout class="QHBoxLayout">
+     <item><widget class="QComboBox" name="cmbType"><property name="minimumWidth"><number>160</number></property><item><property name="text"><string>-- الكل --</string></property></item><item><property name="text"><string>شخص</string></property></item><item><property name="text"><string>شركة</string></property></item></widget></item>
+     <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+     <item><widget class="QCheckBox" name="chkType"/></item>
+     <item><widget class="QPushButton" name="btnType"><property name="text"><string>لنوع معين</string></property><property name="minimumSize"><size><width>130</width><height>36</height></size></property><property name="font"><font><family>Tahoma</family><pointsize>11</pointsize><bold>true</bold></font></property></widget></item>
+    </layout>
+   </item>
+   <!-- Filter 3: نوع الرصيد -->
+   <item>
+    <layout class="QHBoxLayout">
+     <item><widget class="QComboBox" name="cmbBalType"><property name="minimumWidth"><number>160</number></property><item><property name="text"><string>دائن ومدين</string></property></item><item><property name="text"><string>مدين فقط</string></property></item><item><property name="text"><string>دائن فقط</string></property></item></widget></item>
+     <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+     <item><widget class="QCheckBox" name="chkBalType"/></item>
+     <item><widget class="QPushButton" name="btnBalType"><property name="text"><string>نوع الرصيد</string></property><property name="minimumSize"><size><width>130</width><height>36</height></size></property><property name="font"><font><family>Tahoma</family><pointsize>11</pointsize><bold>true</bold></font></property></widget></item>
+    </layout>
+   </item>
+   <!-- Date -->
+   <item>
+    <widget class="QGroupBox" name="grpDate">
+     <layout class="QHBoxLayout">
+      <item><widget class="QDateEdit" name="dateTo"><property name="displayFormat"><string>dd/MM/yyyy</string></property><property name="calendarPopup"><bool>true</bool></property></widget></item>
+      <item><widget class="QPushButton" name="btnToday"><property name="text"><string>لنهاية يوم</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <!-- Buttons -->
+   <item>
+    <widget class="QGroupBox" name="grpButtons">
+     <layout class="QHBoxLayout">
+      <item><widget class="QPushButton" name="btnPrint"><property name="text"><string>🖨</string></property><property name="minimumSize"><size><width>44</width><height>38</height></size></property><property name="font"><font><family>Tahoma</family><pointsize>14</pointsize></font></property></widget></item>
+      <item><widget class="QPushButton" name="btnRun"><property name="text"><string>▽</string></property><property name="minimumSize"><size><width>44</width><height>38</height></size></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
