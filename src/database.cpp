@@ -16,10 +16,6 @@ bool Database::init(const QString &path)
         qDebug() << "DB Error:" << db.lastError().text();
         return false;
     }
-    // Enable foreign key enforcement and WAL mode for better performance
-    QSqlQuery pragma;
-    pragma.exec("PRAGMA foreign_keys=ON");
-    pragma.exec("PRAGMA journal_mode=WAL");
     return createTables();
 }
 
@@ -149,29 +145,12 @@ bool Database::createTables()
            "active INTEGER DEFAULT 1)");
     q.exec("INSERT OR IGNORE INTO operators (id,name,username,password) VALUES (1,'Admin','1','1')");
 
-    // Performance indexes
-    q.exec("CREATE INDEX IF NOT EXISTS idx_sales_inv_customer  ON sales_invoices(customer_id)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_sales_inv_date      ON sales_invoices(date)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_sales_inv_operator  ON sales_invoices(operator_id)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_sales_items_invoice ON sales_items(invoice_id)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_sales_items_product ON sales_items(product_id)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_purch_inv_supplier  ON purchase_invoices(supplier_id)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_purch_inv_date      ON purchase_invoices(date)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_purch_items_invoice ON purchase_items(invoice_id)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_cash_date           ON cash_transactions(date)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_cash_sub_account    ON cash_transactions(sub_account)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_customers_region    ON customers(region)");
-
     if (q.lastError().isValid()) {
         qDebug() << "Table creation error:" << q.lastError().text();
         return false;
     }
     return true;
 }
-
-bool Database::beginTransaction() { return db().transaction(); }
-bool Database::commit()           { return db().commit(); }
-bool Database::rollback()         { return db().rollback(); }
 
 QSqlDatabase Database::db()
 {
@@ -319,13 +298,15 @@ bool Database::addSalesItem(int invoiceId, int productId, double qty,
     q.addBindValue(invoiceId); q.addBindValue(productId); q.addBindValue(qty);
     q.addBindValue(unitPriceDollar); q.addBindValue(unitPriceDinar);
     q.addBindValue(totalDollar); q.addBindValue(totalDinar); q.addBindValue(notes);
-    if (!q.exec()) return false;
-    // Decrement stock — failure here is returned so callers can roll back
-    QSqlQuery upd;
-    upd.prepare("UPDATE products SET stock_qty = stock_qty - ? WHERE id=?");
-    upd.addBindValue(qty);
-    upd.addBindValue(productId);
-    return upd.exec();
+    // Update stock
+    if (q.exec()) {
+        QSqlQuery upd;
+        upd.prepare("UPDATE products SET stock_qty = stock_qty - ? WHERE id=?");
+        upd.addBindValue(qty); upd.addBindValue(productId);
+        upd.exec();
+        return true;
+    }
+    return false;
 }
 
 int Database::createPurchaseInvoice(int supplierId, const QDate &date,
@@ -356,16 +337,16 @@ bool Database::addPurchaseItem(int invoiceId, int productId, double qty,
     q.addBindValue(invoiceId); q.addBindValue(productId); q.addBindValue(qty);
     q.addBindValue(costPrice); q.addBindValue(wholeSaleDollar); q.addBindValue(retailDollar);
     q.addBindValue(wholeSaleDinar); q.addBindValue(retailDinar); q.addBindValue(notes);
-    if (!q.exec()) return false;
-    // Increment stock and update pricing — failure returned so callers can roll back
-    QSqlQuery upd;
-    upd.prepare("UPDATE products SET stock_qty = stock_qty + ?, cost_price=?, "
-                "wholesale_dollar=?, retail_dollar=?, wholesale_dinar=?, retail_dinar=? WHERE id=?");
-    upd.addBindValue(qty);           upd.addBindValue(costPrice);
-    upd.addBindValue(wholeSaleDollar); upd.addBindValue(retailDollar);
-    upd.addBindValue(wholeSaleDinar);  upd.addBindValue(retailDinar);
-    upd.addBindValue(productId);
-    return upd.exec();
+    if (q.exec()) {
+        QSqlQuery upd;
+        upd.prepare("UPDATE products SET stock_qty = stock_qty + ?, cost_price=?, "
+                    "wholesale_dollar=?, retail_dollar=?, wholesale_dinar=?, retail_dinar=? WHERE id=?");
+        upd.addBindValue(qty); upd.addBindValue(costPrice); upd.addBindValue(wholeSaleDollar);
+        upd.addBindValue(retailDollar); upd.addBindValue(wholeSaleDinar); upd.addBindValue(retailDinar);
+        upd.addBindValue(productId); upd.exec();
+        return true;
+    }
+    return false;
 }
 
 int Database::addCashTransaction(int type, const QDate &date, const QString &time,
@@ -396,12 +377,11 @@ QSqlQuery Database::getDailyReport(const QDate &from, const QDate &to, bool byUs
                   "si.total_dollar, si.total_dinar, si.currency, si.operator_id "
                   "FROM sales_invoices si LEFT JOIN customers c ON si.customer_id=c.id "
                   "WHERE si.date BETWEEN ? AND ?";
-    if (byUser && userId > 0) sql += " AND si.operator_id=?";
+    if (byUser && userId > 0) sql += " AND si.operator_id=" + QString::number(userId);
     sql += " ORDER BY si.date, si.id";
     q.prepare(sql);
     q.addBindValue(from.toString("yyyy-MM-dd"));
     q.addBindValue(to.toString("yyyy-MM-dd"));
-    if (byUser && userId > 0) q.addBindValue(userId);
     q.exec();
     return q;
 }
@@ -434,16 +414,13 @@ QSqlQuery Database::getCustomerBalances(const QDate &upTo, const QString &region
                                          const QString &type, int balanceType)
 {
     QSqlQuery q;
-    QList<QVariant> binds;
     QString sql = "SELECT id, name, region, balance_dollar, balance_dinar, type FROM customers WHERE 1=1";
-    if (!region.isEmpty()) { sql += " AND region=?"; binds << region; }
-    if (!type.isEmpty())   { sql += " AND type=?";   binds << type; }
-    if (balanceType == 1)      sql += " AND (balance_dollar > 0 OR balance_dinar > 0)";
-    else if (balanceType == 2) sql += " AND (balance_dollar < 0 OR balance_dinar < 0)";
+    if (!region.isEmpty()) sql += " AND region='" + region + "'";
+    if (!type.isEmpty()) sql += " AND type='" + type + "'";
+    if (balanceType == 1) sql += " AND balance_dollar > 0 OR balance_dinar > 0"; // debit
+    else if (balanceType == 2) sql += " AND balance_dollar < 0 OR balance_dinar < 0"; // credit
     sql += " ORDER BY name";
-    q.prepare(sql);
-    for (const QVariant &v : binds) q.addBindValue(v);
-    q.exec();
+    q.exec(sql);
     return q;
 }
 
@@ -464,15 +441,13 @@ QSqlQuery Database::getInventoryReport(const QDate &upTo, const QString &groupBy
 QSqlQuery Database::getLatePayments(int days, const QString &region)
 {
     QSqlQuery q;
-    QString sql = "SELECT c.id, c.name, c.region, c.phone, "
-                  "c.balance_dollar, c.balance_dinar "
-                  "FROM customers c "
-                  "WHERE (c.balance_dollar > 0 OR c.balance_dinar > 0)";
-    if (!region.isEmpty()) sql += " AND c.region=?";
+    QString sql = QString("SELECT c.id, c.name, c.region, c.phone, "
+                          "c.balance_dollar, c.balance_dinar "
+                          "FROM customers c "
+                          "WHERE (c.balance_dollar > 0 OR c.balance_dinar > 0)");
+    if (!region.isEmpty()) sql += " AND c.region='" + region + "'";
     sql += " ORDER BY c.name";
-    q.prepare(sql);
-    if (!region.isEmpty()) q.addBindValue(region);
-    q.exec();
+    q.exec(sql);
     return q;
 }
 
@@ -482,33 +457,29 @@ QSqlQuery Database::getTotalSalesReport(const QDate &from, const QDate &to,
 {
     QSqlQuery q;
     QString sql;
-    bool bindExtra = false;
-    int  extraId   = -1;
-
     if (groupBy == "customer") {
         sql = "SELECT c.name, SUM(si.total_dollar) as total_dollar, SUM(si.total_dinar) as total_dinar "
               "FROM sales_invoices si LEFT JOIN customers c ON si.customer_id=c.id "
               "WHERE si.date BETWEEN ? AND ?";
-        if (customerId > 0) { sql += " AND si.customer_id=?"; bindExtra = true; extraId = customerId; }
+        if (customerId > 0) sql += " AND si.customer_id=" + QString::number(customerId);
         sql += " GROUP BY c.id ORDER BY total_dollar DESC";
     } else if (groupBy == "product") {
         sql = "SELECT p.name, SUM(sit.qty) as total_qty, SUM(sit.total_dollar) as total_dollar "
               "FROM sales_items sit LEFT JOIN products p ON sit.product_id=p.id "
               "LEFT JOIN sales_invoices si ON sit.invoice_id=si.id "
               "WHERE si.date BETWEEN ? AND ?";
-        if (productId > 0) { sql += " AND sit.product_id=?"; bindExtra = true; extraId = productId; }
+        if (productId > 0) sql += " AND sit.product_id=" + QString::number(productId);
         sql += " GROUP BY p.id ORDER BY total_dollar DESC";
     } else {
         sql = "SELECT si.id, si.date, c.name, si.total_dollar, si.total_dinar "
               "FROM sales_invoices si LEFT JOIN customers c ON si.customer_id=c.id "
               "WHERE si.date BETWEEN ? AND ?";
-        if (customerId > 0) { sql += " AND si.customer_id=?"; bindExtra = true; extraId = customerId; }
+        if (customerId > 0) sql += " AND si.customer_id=" + QString::number(customerId);
         sql += " ORDER BY si.date";
     }
     q.prepare(sql);
     q.addBindValue(from.toString("yyyy-MM-dd"));
     q.addBindValue(to.toString("yyyy-MM-dd"));
-    if (bindExtra) q.addBindValue(extraId);
     q.exec();
     return q;
 }
@@ -516,30 +487,24 @@ QSqlQuery Database::getTotalSalesReport(const QDate &from, const QDate &to,
 QSqlQuery Database::getAllCustomers(const QString &region, const QString &type)
 {
     QSqlQuery q;
-    QList<QVariant> binds;
     QString sql = "SELECT id, name, region, phone, address, balance_dollar, balance_dinar FROM customers WHERE 1=1";
-    if (!region.isEmpty()) { sql += " AND region=?"; binds << region; }
-    if (!type.isEmpty())   { sql += " AND type=?";   binds << type; }
+    if (!region.isEmpty()) sql += " AND region='" + region + "'";
+    if (!type.isEmpty()) sql += " AND type='" + type + "'";
     sql += " ORDER BY name";
-    q.prepare(sql);
-    for (const QVariant &v : binds) q.addBindValue(v);
-    q.exec();
+    q.exec(sql);
     return q;
 }
 
 QSqlQuery Database::getOverallCustomerBalance(const QString &region, const QString &type, int balanceType)
 {
     QSqlQuery q;
-    QList<QVariant> binds;
     QString sql = "SELECT name, region, balance_dollar, balance_dinar FROM customers WHERE 1=1";
-    if (!region.isEmpty()) { sql += " AND region=?"; binds << region; }
-    if (!type.isEmpty())   { sql += " AND type=?";   binds << type; }
-    if (balanceType == 1)      sql += " AND balance_dollar > 0";
+    if (!region.isEmpty()) sql += " AND region='" + region + "'";
+    if (!type.isEmpty()) sql += " AND type=" + type;
+    if (balanceType == 1) sql += " AND balance_dollar > 0";
     else if (balanceType == 2) sql += " AND balance_dollar < 0";
     sql += " ORDER BY name";
-    q.prepare(sql);
-    for (const QVariant &v : binds) q.addBindValue(v);
-    q.exec();
+    q.exec(sql);
     return q;
 }
 
