@@ -33,6 +33,8 @@ private slots:
     void navigateFirst();
     void navigateLast();
     void updateTotals();
+    void saveToWaiting();
+    void retrieveFromWaiting();
 
 private:
     void setupUI();
@@ -41,6 +43,16 @@ private:
     void loadProducts();
     void loadInvoice(int id);
     void clearForm();
+
+    struct WaitingInvoice {
+        int customerId;
+        QString customerName;
+        QList<QStringList> items;
+        QString currency;
+        QString paymentType;
+        QString notes;
+    };
+    QList<WaitingInvoice> m_waitingList;
     
 
     /* ── Header ── */
@@ -85,6 +97,8 @@ private:
     QLabel *m_balDinarLabel;
     QLabel *m_currentBalDollarLabel;
     QLabel *m_currentBalDinarLabel;
+    QLineEdit *m_receivedDollarEdit;
+    QLineEdit *m_receivedDinarEdit;
 
     /* ── Toolbar ── */
     QPushButton *m_saveBtn;
@@ -98,6 +112,8 @@ private:
     QPushButton *m_productMoveBtn;
     QPushButton *m_firstBtn;
     QPushButton *m_lastBtn;
+    QPushButton *m_waitBtn;
+    QPushButton *m_retrieveBtn;
     QLabel      *m_navLabel;
     QLabel      *m_totalCountLabel;
     QSpinBox    *m_copiesSpinBox;

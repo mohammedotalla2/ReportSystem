@@ -7,6 +7,9 @@
 #include <QLabel>
 #include <QDateEdit>
 #include <QSpinBox>
+#include <QTabWidget>
+#include <QTableWidget>
+#include <QHeaderView>
 #include "printmanager.h"
 
 class CashBoxWindow : public QDialog {
@@ -27,10 +30,29 @@ private slots:
     void navigateNext(); void navigateLast();
     void receiveFromCustomer();
     void payToCustomer();
+
+    void searchDailyReport();
+    void searchVaultBalance(const QString &currency);
+    void searchExchangeRates();
+    void searchAccountsLedger();
+    void searchDiscounts();
+
 private:
-    void setupUI(); void applyStyles();
+    void setupUI();
+    void applyStyles();
     void loadTransaction(int id);
     void clearForm();
+
+    QWidget* createTab1DailyReport();
+    QWidget* createTab2VaultBalance();
+    QWidget* createTab3ExchangeRates();
+    QWidget* createTab4AccountsLedger();
+    QWidget* createTab5Discounts();
+
+    // Tab widget
+    QTabWidget *m_tabs;
+
+    // ── Tab 0: existing transaction entry ──
     // Header
     QComboBox *m_typeCombo;
     QLabel *m_timeLabel;
@@ -59,5 +81,28 @@ private:
     QLabel *m_navLabel, *m_totalLabel;
     int m_currentId;
     PrintManager *m_printer;
+
+    // Tab 1 - Daily Report
+    QDateEdit    *m_drFromDate, *m_drToDate;
+    QLineEdit    *m_drCustomerEdit;
+    QTableWidget *m_drTable;
+    QLabel       *m_drNetDollar, *m_drNetDinar, *m_drTotalDollar, *m_drTotalDinar;
+
+    // Tab 2 - Vault Balance
+    QDateEdit    *m_vbFromDate, *m_vbToDate;
+    QTableWidget *m_vbTable;
+
+    // Tab 3 - Exchange Rates
+    QDateEdit    *m_erFromDate, *m_erToDate;
+    QTableWidget *m_erTable;
+
+    // Tab 4 - Accounts Ledger
+    QTabWidget   *m_alSubTabs;
+    QTableWidget *m_alReceiptsTable, *m_alPaymentsTable;
+    QLabel       *m_alReceiptsTotal, *m_alPaymentsTotal;
+
+    // Tab 5 - Discounts
+    QDateEdit    *m_discFromDate, *m_discToDate;
+    QTableWidget *m_discTable;
 };
 #endif

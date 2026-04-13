@@ -57,7 +57,7 @@ void PurchaseWindow::setupUI()
     yearEdit->setDisplayFormat("yyyy");
 
     m_purchaseTypeCombo = new QComboBox;
-    m_purchaseTypeCombo->addItems({QString::fromUtf8("محلي"), QString::fromUtf8("استيراد")});
+    m_purchaseTypeCombo->addItems({QString::fromUtf8("محلي"), QString::fromUtf8("استيراد"), QString::fromUtf8("مرتجع")});
 
     m_supplierCombo = new QComboBox; m_supplierCombo->setEditable(true);
     m_supplierCombo->setMinimumWidth(180);
@@ -88,6 +88,9 @@ void PurchaseWindow::setupUI()
     headerGrid->addWidget(lbl(QString::fromUtf8("نوع الدفع")), 0, 1);
     headerGrid->addWidget(m_payTypeCombo, 0, 0);
 
+    m_payMechCombo = new QComboBox;
+    m_payMechCombo->addItems({QString::fromUtf8("نقداً"), QString::fromUtf8("حوالة"), QString::fromUtf8("شيك")});
+
     // Row 1
     headerGrid->addWidget(lbl(QString::fromUtf8("العملة")), 1, 12);
     headerGrid->addWidget(m_currencyCombo, 1, 11);
@@ -95,6 +98,8 @@ void PurchaseWindow::setupUI()
     headerGrid->addWidget(m_invoiceRefEdit, 1, 8);
     headerGrid->addWidget(lbl(QString::fromUtf8("سعر صرف $")), 1, 6);
     headerGrid->addWidget(m_exchangeRateEdit, 1, 5);
+    headerGrid->addWidget(lbl(QString::fromUtf8("آلية الصرف")), 1, 3);
+    headerGrid->addWidget(m_payMechCombo, 1, 2);
 
     m_notesEdit = new QLineEdit;
     m_notesEdit->setPlaceholderText(QString::fromUtf8("الملاحظات"));
@@ -173,8 +178,15 @@ void PurchaseWindow::setupUI()
     m_discountEdit = new QLineEdit("0");
     m_discountEdit->setObjectName("greenField");
     m_supplierBalLabel = new QLabel(QString::fromUtf8("رصيدالمجهز: 0"));
+    m_supplierBalDinarLabel = new QLabel(QString::fromUtf8("0"));
+    m_lastPurchasePriceLabel = new QLabel(QString::fromUtf8("0"));
 
     summRow->addWidget(m_supplierBalLabel);
+    summRow->addWidget(new QLabel(QString::fromUtf8("دينار")));
+    summRow->addWidget(m_supplierBalDinarLabel);
+    summRow->addStretch();
+    summRow->addWidget(new QLabel(QString::fromUtf8("آخر سعر شراء د")));
+    summRow->addWidget(m_lastPurchasePriceLabel);
     summRow->addStretch();
     summRow->addWidget(new QLabel("$")); summRow->addWidget(m_grandTotalDollarEdit);
     summRow->addWidget(new QLabel(QString::fromUtf8("دينار"))); summRow->addWidget(m_grandTotalDinarEdit);
@@ -221,6 +233,14 @@ void PurchaseWindow::setupUI()
     m_expensesRatioLabel = new QLabel(QString::fromUtf8("نسبة المصاريف"));
     m_expensesRatioLabel->setObjectName("expLbl");
 
+    m_supplierStatBtn = new QPushButton(QString::fromUtf8("كشف الحساب"));
+    m_supplierStatBtn->setFixedHeight(36);
+    m_supplierStatBtn->setObjectName("toolBtn");
+
+    m_closeBtn = new QPushButton(QString::fromUtf8("إغلاق"));
+    m_closeBtn->setFixedHeight(36);
+    m_closeBtn->setObjectName("toolBtn");
+
     toolLayout->addWidget(m_saveBtn);
     toolLayout->addWidget(m_searchBtn);
     toolLayout->addWidget(m_deleteBtn);
@@ -233,6 +253,8 @@ void PurchaseWindow::setupUI()
     toolLayout->addStretch();
     toolLayout->addWidget(m_expensesRatioLabel);
     toolLayout->addWidget(m_totalExpensesBtn);
+    toolLayout->addWidget(m_supplierStatBtn);
+    toolLayout->addWidget(m_closeBtn);
     toolLayout->addStretch();
     toolLayout->addWidget(m_firstBtn);
     toolLayout->addWidget(m_navLabel);
@@ -264,6 +286,15 @@ void PurchaseWindow::setupUI()
             this, &PurchaseWindow::onProductSelected);
     connect(m_qtyEdit, &QLineEdit::textChanged, this, &PurchaseWindow::calculateTotals);
     connect(m_costPriceEdit, &QLineEdit::textChanged, this, &PurchaseWindow::calculateTotals);
+    connect(m_currencyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int){ onCurrencyChanged(); });
+    connect(m_supplierCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &PurchaseWindow::onSupplierChanged);
+    connect(m_closeBtn, &QPushButton::clicked, this, &PurchaseWindow::close);
+    connect(m_supplierStatBtn, &QPushButton::clicked, this, [this](){
+        QMessageBox::information(this, QString::fromUtf8("كشف الحساب"),
+            QString::fromUtf8("المجهز: ") + m_supplierCombo->currentText());
+    });
 }
 
 void PurchaseWindow::applyStyles()
@@ -457,3 +488,41 @@ void PurchaseWindow::navigateFirst() {}
 void PurchaseWindow::navigatePrev()  { if (m_currentInvoiceId > 1) m_currentInvoiceId--; }
 void PurchaseWindow::navigateNext()  { m_currentInvoiceId++; }
 void PurchaseWindow::navigateLast()  {}
+
+void PurchaseWindow::onSupplierChanged(int index)
+{
+    if (index <= 0) return;
+    int suppId = m_supplierCombo->currentData().toInt();
+    QSqlQuery q;
+    q.prepare("SELECT balance_dollar, balance_dinar FROM customers WHERE id=?");
+    q.addBindValue(suppId); q.exec();
+    if (q.next()) {
+        m_supplierBalLabel->setText(QString::fromUtf8("رصيد المجهز $: ") + QString::number(q.value(0).toDouble(), 'f', 2));
+        m_supplierBalDinarLabel->setText(QString::fromUtf8("د: ") + QString::number(q.value(1).toDouble(), 'f', 0));
+    }
+}
+
+void PurchaseWindow::onCurrencyChanged()
+{
+    bool toDinar = (m_currencyCombo->currentText() == QString::fromUtf8("دينار"));
+    double rate = m_exchangeRateEdit->text().toDouble();
+    if (rate <= 0) rate = Database::getExchangeRate();
+    for (int r = 0; r < m_itemsTable->rowCount(); r++) {
+        auto *priceItem = m_itemsTable->item(r, 4);
+        auto *amtItem   = m_itemsTable->item(r, 5);
+        auto *qtyItem   = m_itemsTable->item(r, 3);
+        if (!priceItem || !amtItem || !qtyItem) continue;
+        double price = priceItem->text().toDouble();
+        double qty   = qtyItem->text().toDouble();
+        double newPrice = toDinar ? (price * rate) : (price / rate);
+        priceItem->setText(QString::number(newPrice, 'f', 2));
+        amtItem->setText(QString::number(newPrice * qty, 'f', 0));
+    }
+    // recalc grand totals
+    double grand = 0;
+    for (int r = 0; r < m_itemsTable->rowCount(); r++)
+        if (m_itemsTable->item(r, 7)) grand += m_itemsTable->item(r, 7)->text().toDouble();
+    double grandRate = toDinar ? rate : 1.0;
+    m_grandTotalDollarEdit->setText(QString::number(grand, 'f', 2));
+    m_grandTotalDinarEdit->setText(QString::number(grand * grandRate, 'f', 0));
+}
