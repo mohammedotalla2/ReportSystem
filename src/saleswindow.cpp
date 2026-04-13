@@ -22,6 +22,8 @@
 #include <QTimer>
 #include <QInputDialog>
 #include <QCheckBox>
+#include <QListWidget>
+#include <QDialogButtonBox>
 
 
 /* ================================================================
@@ -686,6 +688,8 @@ void SalesWindow::setupUI()
     connect(m_thermalBtn,      &QPushButton::clicked, this, &SalesWindow::printThermal);
     connect(m_prepListBtn,     &QPushButton::clicked, this, &SalesWindow::printPreparationList);
     connect(m_customerStatBtn, &QPushButton::clicked, this, &SalesWindow::showCustomerStatement);
+    connect(addToWaitBtn,      &QPushButton::clicked, this, &SalesWindow::addToWait);
+    connect(retrieveWaitBtn,   &QPushButton::clicked, this, &SalesWindow::retrieveFromWait);
     connect(m_firstBtn,        &QPushButton::clicked, this, &SalesWindow::navigateFirst);
     connect(m_prevBtn,         &QPushButton::clicked, this, &SalesWindow::navigatePrev);
     connect(m_nextBtn,         &QPushButton::clicked, this, &SalesWindow::navigateNext);
@@ -728,13 +732,23 @@ void SalesWindow::setupUI()
         updateProductInfoLabels(pid);
     });
 
-    /* filter product list */
-    connect(m_partNameEdit, &QLineEdit::textChanged, [this](const QString &txt) {
+    /* filter product list by group + name/barcode */
+    auto filterProductList = [this]() {
+        QString grp = m_groupCombo->currentText();
+        bool allGroups = (grp == QString::fromUtf8("كل الاصناف") || grp.isEmpty());
+        QString txt = m_partNameEdit->text();
         for (int r = 0; r < m_productList->rowCount(); ++r) {
-            bool hide = !m_productList->item(r, 1)->text().contains(txt, Qt::CaseInsensitive);
-            m_productList->setRowHidden(r, hide);
+            QTableWidgetItem *nm = m_productList->item(r, 1);
+            if (!nm) { m_productList->setRowHidden(r, true); continue; }
+            bool groupOk = allGroups || nm->data(Qt::UserRole+2).toString() == grp;
+            bool textOk  = txt.isEmpty()
+                || nm->text().contains(txt, Qt::CaseInsensitive)
+                || nm->data(Qt::UserRole+1).toString().contains(txt, Qt::CaseInsensitive);
+            m_productList->setRowHidden(r, !(groupOk && textOk));
         }
-    });
+    };
+    connect(m_partNameEdit, &QLineEdit::textChanged, [filterProductList](const QString &){ filterProductList(); });
+    connect(m_groupCombo, &QComboBox::currentTextChanged, [filterProductList](const QString &){ filterProductList(); });
 
     /* select product from right panel */
     connect(m_productList, &QTableWidget::itemDoubleClicked,
@@ -932,6 +946,18 @@ void SalesWindow::loadProducts()
     m_barcodeCombo->clear();
     m_productList->setRowCount(0);
 
+    // Reload groups into combo (keep "كل الاصناف" as first item)
+    m_groupCombo->blockSignals(true);
+    QString prevGroup = m_groupCombo->currentText();
+    m_groupCombo->clear();
+    m_groupCombo->addItem(QString::fromUtf8("كل الاصناف"));
+    QStringList groups = Database::getProductGroups();
+    for (const QString &g : groups)
+        if (!g.isEmpty()) m_groupCombo->addItem(g);
+    int gi = m_groupCombo->findText(prevGroup);
+    m_groupCombo->setCurrentIndex(gi >= 0 ? gi : 0);
+    m_groupCombo->blockSignals(false);
+
     QSqlQuery q = Database::getProducts();
     int row = 0;
     while (q.next()) {
@@ -943,7 +969,9 @@ void SalesWindow::loadProducts()
         chk->setCheckState(Qt::Unchecked);
         m_productList->setItem(row, 0, chk);
         QTableWidgetItem *nm = new QTableWidgetItem(q.value(2).toString());
-        nm->setData(Qt::UserRole, q.value(0));
+        nm->setData(Qt::UserRole,    q.value(0));           // product id
+        nm->setData(Qt::UserRole+1,  q.value(1).toString()); // barcode
+        nm->setData(Qt::UserRole+2,  q.value(3).toString()); // product_group
         m_productList->setItem(row, 1, nm);
         ++row;
     }
@@ -1266,6 +1294,98 @@ void SalesWindow::saveInvoice()
         Database::addSalesItem(id, pid, qty, price, 0, tot, 0, "");
     }
 
+    // ── Accounting: cash box + customer balance ──────────────────
+    QString currency    = m_currencyCombo->currentText();
+    QString paymentType = m_paymentTypeCombo->currentText();
+    double  rate        = m_exchangeRateEdit->text().toDouble();
+    double  recDollar   = m_receivedDollarEdit->text().toDouble();
+    double  recDinar    = m_receivedDinarEdit->text().toDouble();
+    bool    isCash      = (paymentType == QString::fromUtf8("نقدي")
+                        || paymentType == QString::fromUtf8("جملة"));
+    QString docNo       = QString::number(id);
+    QString custName    = m_customerCombo->currentText();
+
+    if (isCash) {
+        // Add received amount to cash box
+        double cashDollar = (currency == "$" && recDollar > 0) ? recDollar : 0.0;
+        double cashDinar  = (currency != "$" && recDinar  > 0) ? recDinar  : 0.0;
+        if (cashDollar > 0 || cashDinar > 0) {
+            double equivDinar  = cashDollar * rate;
+            double equivDollar = (rate > 0) ? (cashDinar / rate) : 0.0;
+            Database::addCashTransaction(
+                0 /*قبض*/, m_dateEdit->date(),
+                QTime::currentTime().toString("hh:mm AP"),
+                1, docNo,
+                QString::fromUtf8("مبيعات"), custName,
+                cashDollar, cashDinar,
+                equivDinar, equivDollar,
+                rate, QString::fromUtf8("صندوق"), "");
+        }
+        // Shortfall: invoice amount not covered by received cash → add to customer balance
+        if (currency == "$") {
+            double shortfall = total - recDollar;
+            if (shortfall > 0.001) {
+                QSqlQuery uq;
+                uq.prepare("UPDATE customers SET balance_dollar = balance_dollar + ? WHERE id=?");
+                uq.addBindValue(shortfall);
+                uq.addBindValue(custId);
+                uq.exec();
+            }
+        } else {
+            double shortfall = totalDinar - recDinar;
+            if (shortfall > 0.001) {
+                QSqlQuery uq;
+                uq.prepare("UPDATE customers SET balance_dinar = balance_dinar + ? WHERE id=?");
+                uq.addBindValue(shortfall);
+                uq.addBindValue(custId);
+                uq.exec();
+            }
+        }
+    } else {
+        // Credit (آجل): entire invoice amount added to customer balance
+        QSqlQuery uq;
+        if (currency == "$") {
+            uq.prepare("UPDATE customers SET balance_dollar = balance_dollar + ? WHERE id=?");
+            uq.addBindValue(total);
+        } else {
+            uq.prepare("UPDATE customers SET balance_dinar = balance_dinar + ? WHERE id=?");
+            uq.addBindValue(totalDinar);
+        }
+        uq.addBindValue(custId);
+        uq.exec();
+        // If any cash was also received on a credit invoice, add it to the box and deduct from balance
+        if (recDollar > 0.001) {
+            double equivDinar = recDollar * rate;
+            Database::addCashTransaction(
+                0, m_dateEdit->date(),
+                QTime::currentTime().toString("hh:mm AP"),
+                1, docNo,
+                QString::fromUtf8("مبيعات"), custName,
+                recDollar, 0, equivDinar, recDollar, rate,
+                QString::fromUtf8("صندوق"), "");
+            QSqlQuery uq2;
+            uq2.prepare("UPDATE customers SET balance_dollar = balance_dollar - ? WHERE id=?");
+            uq2.addBindValue(recDollar);
+            uq2.addBindValue(custId);
+            uq2.exec();
+        }
+        if (recDinar > 0.001) {
+            double equivDollar = (rate > 0) ? (recDinar / rate) : 0.0;
+            Database::addCashTransaction(
+                0, m_dateEdit->date(),
+                QTime::currentTime().toString("hh:mm AP"),
+                1, docNo,
+                QString::fromUtf8("مبيعات"), custName,
+                0, recDinar, recDinar, equivDollar, rate,
+                QString::fromUtf8("صندوق"), "");
+            QSqlQuery uq2;
+            uq2.prepare("UPDATE customers SET balance_dinar = balance_dinar - ? WHERE id=?");
+            uq2.addBindValue(recDinar);
+            uq2.addBindValue(custId);
+            uq2.exec();
+        }
+    }
+
     m_currentInvoiceId = id;
     m_invoiceNoSpin->blockSignals(true);
     m_invoiceNoSpin->setValue(id);
@@ -1430,4 +1550,147 @@ void SalesWindow::navigateLast()
     QSqlQuery q;
     q.exec("SELECT MAX(id) FROM sales_invoices");
     if (q.next() && !q.value(0).isNull()) loadInvoice(q.value(0).toInt());
+}
+
+/* ================================================================
+   Waiting System
+   ================================================================ */
+void SalesWindow::addToWait()
+{
+    if (m_itemsTable->rowCount() == 0) {
+        QMessageBox::warning(this, "", QString::fromUtf8("لا توجد مواد في الفاتورة"));
+        return;
+    }
+
+    WaitedInvoice inv;
+    inv.customerId    = m_customerCombo->currentData().toInt();
+    inv.customerName  = m_customerCombo->currentText();
+    inv.address       = m_addressEdit->text();
+    inv.phone         = m_phoneEdit->text();
+    inv.date          = m_dateEdit->date();
+    inv.paymentType   = m_paymentTypeCombo->currentText();
+    inv.currency      = m_currencyCombo->currentText();
+    inv.invoiceType   = m_invoiceTypeCombo->currentText();
+    inv.exchangeRate  = m_exchangeRateEdit->text().toDouble();
+    inv.receiver      = m_receiverEdit->text();
+    inv.notes         = m_notesEdit->text();
+    inv.receivedDollar = m_receivedDollarEdit->text().toDouble();
+    inv.receivedDinar  = m_receivedDinarEdit->text().toDouble();
+    inv.discount       = m_discountDinarEdit->text().toDouble();
+
+    for (int r = 0; r < m_itemsTable->rowCount(); ++r) {
+        WaitedInvoiceItem it;
+        it.productId   = m_itemsTable->item(r, 9) ? m_itemsTable->item(r, 9)->text().toInt() : 0;
+        it.productName = m_itemsTable->item(r, 3) ? m_itemsTable->item(r, 3)->text() : "";
+        it.unit        = m_itemsTable->item(r, 2) ? m_itemsTable->item(r, 2)->text() : "";
+        it.qty         = m_itemsTable->item(r, 4) ? m_itemsTable->item(r, 4)->text().toDouble() : 0;
+        it.unitPrice   = m_itemsTable->item(r, 5) ? m_itemsTable->item(r, 5)->text().toDouble() : 0;
+        it.total       = m_itemsTable->item(r, 6) ? m_itemsTable->item(r, 6)->text().toDouble() : 0;
+        it.notes       = m_itemsTable->item(r, 7) ? m_itemsTable->item(r, 7)->text() : "";
+        inv.items.append(it);
+    }
+
+    m_waitList.append(inv);
+    clearForm();
+    QMessageBox::information(this, "",
+        QString::fromUtf8("تم حفظ الفاتورة في الانتظار. عدد الفواتير المعلقة: %1")
+        .arg(m_waitList.size()));
+}
+
+void SalesWindow::retrieveFromWait()
+{
+    if (m_waitList.isEmpty()) {
+        QMessageBox::information(this, "", QString::fromUtf8("لا توجد فواتير في الانتظار"));
+        return;
+    }
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(QString::fromUtf8("الفواتير المعلقة"));
+    dlg.setLayoutDirection(Qt::RightToLeft);
+    dlg.resize(400, 300);
+
+    QVBoxLayout *vl = new QVBoxLayout(&dlg);
+    QListWidget *lw = new QListWidget;
+    lw->setLayoutDirection(Qt::RightToLeft);
+    for (int i = 0; i < m_waitList.size(); ++i) {
+        const WaitedInvoice &inv = m_waitList.at(i);
+        QString label = QString::fromUtf8("فاتورة %1 — %2 — %3 مادة")
+            .arg(i + 1)
+            .arg(inv.customerName)
+            .arg(inv.items.size());
+        lw->addItem(label);
+    }
+    lw->setCurrentRow(0);
+    QDialogButtonBox *btns = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    btns->setLayoutDirection(Qt::RightToLeft);
+    vl->addWidget(lw);
+    vl->addWidget(btns);
+
+    connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(lw, &QListWidget::itemDoubleClicked, &dlg, &QDialog::accept);
+
+    if (dlg.exec() != QDialog::Accepted) return;
+    int sel = lw->currentRow();
+    if (sel < 0 || sel >= m_waitList.size()) return;
+
+    WaitedInvoice inv = m_waitList.takeAt(sel);
+
+    // Restore the form
+    clearForm();
+
+    // Customer
+    for (int i = 0; i < m_customerCombo->count(); ++i) {
+        if (m_customerCombo->itemData(i).toInt() == inv.customerId) {
+            m_customerCombo->setCurrentIndex(i);
+            break;
+        }
+    }
+    if (m_customerCombo->currentData().toInt() != inv.customerId)
+        m_customerCombo->setEditText(inv.customerName);
+
+    m_addressEdit->setText(inv.address);
+    m_phoneEdit->setText(inv.phone);
+    m_dateEdit->setDate(inv.date);
+    m_notesEdit->setText(inv.notes);
+    m_receiverEdit->setText(inv.receiver);
+    m_exchangeRateEdit->setText(QString::number(inv.exchangeRate));
+    m_receivedDollarEdit->setText(QString::number(inv.receivedDollar));
+    m_receivedDinarEdit->setText(QString::number(inv.receivedDinar));
+    m_discountDinarEdit->setText(QString::number(inv.discount));
+
+    // Set combos without triggering repricing until items are loaded
+    m_paymentTypeCombo->blockSignals(true);
+    m_currencyCombo->blockSignals(true);
+    m_invoiceTypeCombo->blockSignals(true);
+    int pi = m_paymentTypeCombo->findText(inv.paymentType);
+    if (pi >= 0) m_paymentTypeCombo->setCurrentIndex(pi);
+    int ci = m_currencyCombo->findText(inv.currency);
+    if (ci >= 0) m_currencyCombo->setCurrentIndex(ci);
+    int ii = m_invoiceTypeCombo->findText(inv.invoiceType);
+    if (ii >= 0) m_invoiceTypeCombo->setCurrentIndex(ii);
+    m_paymentTypeCombo->blockSignals(false);
+    m_currencyCombo->blockSignals(false);
+    m_invoiceTypeCombo->blockSignals(false);
+
+    // Restore items
+    m_itemsTable->blockSignals(true);
+    for (const WaitedInvoiceItem &it : inv.items) {
+        int row = m_itemsTable->rowCount();
+        m_itemsTable->insertRow(row);
+        m_itemsTable->setItem(row, 0, new QTableWidgetItem(QString::number(row + 1)));
+        m_itemsTable->setItem(row, 1, new QTableWidgetItem(""));  // seq placeholder
+        m_itemsTable->setItem(row, 2, new QTableWidgetItem(it.unit));
+        m_itemsTable->setItem(row, 3, new QTableWidgetItem(it.productName));
+        m_itemsTable->setItem(row, 4, new QTableWidgetItem(QString::number(it.qty)));
+        m_itemsTable->setItem(row, 5, new QTableWidgetItem(QString::number(it.unitPrice)));
+        m_itemsTable->setItem(row, 6, new QTableWidgetItem(QString::number(it.total)));
+        m_itemsTable->setItem(row, 7, new QTableWidgetItem(it.notes));
+        m_itemsTable->setItem(row, 8, new QTableWidgetItem(""));
+        m_itemsTable->setItem(row, 9, new QTableWidgetItem(QString::number(it.productId)));
+    }
+    m_itemsTable->blockSignals(false);
+    renumberRows();
+    updateTotals();
 }
