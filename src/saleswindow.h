@@ -116,7 +116,7 @@ private:
     QLineEdit   *m_carNoEdit;
 
     /* ── Right product-selection panel ── */
-    QComboBox    *m_groupCombo;
+    QTableWidget *m_groupCombo;   // groups table (replaces combo)
     QLineEdit    *m_partNameEdit;
     QTableWidget *m_productList;
 

@@ -339,6 +339,24 @@ void SalesWindow::setupUI()
     m_itemsTable->setMinimumHeight(240);
     m_itemsTable->setEditTriggers(QAbstractItemView::DoubleClicked |
                                   QAbstractItemView::SelectedClicked);
+
+    /* live recalc when user edits qty (col 4) or price (col 5) directly in the table */
+    connect(m_itemsTable, &QTableWidget::itemChanged, [this](QTableWidgetItem *it) {
+        int col = it->column();
+        if (col != 4 && col != 5) return;
+        int row = it->row();
+        auto *qtyItem   = m_itemsTable->item(row, 4);
+        auto *priceItem = m_itemsTable->item(row, 5);
+        if (!qtyItem || !priceItem) return;
+        double qty   = qtyItem->text().toDouble();
+        double price = priceItem->text().toDouble();
+        double total = qty * price;
+        m_itemsTable->blockSignals(true);
+        m_itemsTable->setItem(row, 6, new QTableWidgetItem(QString::number(total, 'f', 2)));
+        m_itemsTable->blockSignals(false);
+        updateTotals();
+    });
+
     tvl->addWidget(m_itemsTable);
 
     /* ===================================================
@@ -551,9 +569,14 @@ void SalesWindow::setupUI()
 
     QLabel *grpLbl = new QLabel(QString::fromUtf8("حسب المجموعة"));
     grpLbl->setObjectName("panelTitle");
-    m_groupCombo = new QComboBox;
-    m_groupCombo->setEditable(true);
-    m_groupCombo->addItem(QString::fromUtf8("كل الاصناف"));
+    m_groupCombo = new QTableWidget(0, 1);
+    m_groupCombo->setObjectName("groupTable");
+    m_groupCombo->setHorizontalHeaderLabels({QString::fromUtf8("المجموعة")});
+    m_groupCombo->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_groupCombo->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_groupCombo->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_groupCombo->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_groupCombo->setFixedHeight(140);
 
     QLabel *partLbl = new QLabel(QString::fromUtf8("جزء من الاسم"));
     m_partNameEdit = new QLineEdit;
@@ -734,8 +757,11 @@ void SalesWindow::setupUI()
 
     /* filter product list by group + name/barcode */
     auto filterProductList = [this]() {
-        QString grp = m_groupCombo->currentText();
-        bool allGroups = (grp == QString::fromUtf8("كل الاصناف") || grp.isEmpty());
+        int selRow = m_groupCombo->currentRow();
+        QString grp;
+        if (selRow >= 0 && m_groupCombo->item(selRow, 0))
+            grp = m_groupCombo->item(selRow, 0)->text();
+        bool allGroups = (grp == QString::fromUtf8("كل الاصناف") || grp.isEmpty() || selRow < 0);
         QString txt = m_partNameEdit->text();
         for (int r = 0; r < m_productList->rowCount(); ++r) {
             QTableWidgetItem *nm = m_productList->item(r, 1);
@@ -748,7 +774,8 @@ void SalesWindow::setupUI()
         }
     };
     connect(m_partNameEdit, &QLineEdit::textChanged, [filterProductList](const QString &){ filterProductList(); });
-    connect(m_groupCombo, &QComboBox::currentTextChanged, [filterProductList](const QString &){ filterProductList(); });
+    connect(m_groupCombo, &QTableWidget::currentCellChanged,
+            [filterProductList](int, int, int, int){ filterProductList(); });
 
     /* select product from right panel */
     connect(m_productList, &QTableWidget::itemDoubleClicked,
@@ -946,16 +973,20 @@ void SalesWindow::loadProducts()
     m_barcodeCombo->clear();
     m_productList->setRowCount(0);
 
-    // Reload groups into combo (keep "كل الاصناف" as first item)
+    // Reload groups into table (row 0 = "كل الاصناف")
     m_groupCombo->blockSignals(true);
-    QString prevGroup = m_groupCombo->currentText();
-    m_groupCombo->clear();
-    m_groupCombo->addItem(QString::fromUtf8("كل الاصناف"));
+    m_groupCombo->setRowCount(0);
+    m_groupCombo->insertRow(0);
+    m_groupCombo->setItem(0, 0, new QTableWidgetItem(QString::fromUtf8("كل الاصناف")));
     QStringList groups = Database::getProductGroups();
-    for (const QString &g : groups)
-        if (!g.isEmpty()) m_groupCombo->addItem(g);
-    int gi = m_groupCombo->findText(prevGroup);
-    m_groupCombo->setCurrentIndex(gi >= 0 ? gi : 0);
+    int gr = 1;
+    for (const QString &g : groups) {
+        if (g.isEmpty()) continue;
+        m_groupCombo->insertRow(gr);
+        m_groupCombo->setItem(gr, 0, new QTableWidgetItem(g));
+        ++gr;
+    }
+    m_groupCombo->selectRow(0);
     m_groupCombo->blockSignals(false);
 
     QSqlQuery q = Database::getProducts();
