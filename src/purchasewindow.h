@@ -28,6 +28,7 @@ private slots:
 private:
     void setupUI(); void applyStyles();
     void loadSuppliers(); void loadProducts();
+    void updateCurrencyLock();   // disable currency combo when table has items
 
     QSpinBox   *m_invoiceNoSpin;
     QComboBox  *m_supplierCombo;

@@ -530,12 +530,15 @@ void PurchaseWindow::calculateTotals()
 void PurchaseWindow::addItem()
 {
     if (m_productCombo->currentText().isEmpty()) return;
-    int    prodId = m_productCombo->currentData().toInt();
-    double qty    = m_qtyEdit->text().toDouble();
-    double cost   = m_costPriceEdit->text().toDouble();
-    double rate   = m_exchangeRateEdit->text().toDouble();
+    bool   isDinar = (m_currencyCombo->currentText() == QString::fromUtf8("دينار"));
+    int    prodId  = m_productCombo->currentData().toInt();
+    double qty     = m_qtyEdit->text().toDouble();
+    double cost    = m_costPriceEdit->text().toDouble();   // in active currency
+    double rate    = m_exchangeRateEdit->text().toDouble();
     if (rate <= 0) rate = Database::getExchangeRate();
-    double totalD  = qty * cost;
+    // Always store dollar cost in col 5; dinar amount in col 7
+    double costDollar = isDinar ? (cost / rate) : cost;
+    double totalD  = qty * costDollar;
     double totalDn = totalD * rate;
 
     int row = m_itemsTable->rowCount();
@@ -552,14 +555,14 @@ void PurchaseWindow::addItem()
     cell(2,  QString::number(prodId));                         // رمز (product id as code)
     cell(3,  m_productCombo->currentText());                   // اسم المادة
     cell(4,  QString::number(qty));                            // الكمية
-    cell(5,  QString::number(cost, 'f', 2));                   // الكلفة $
-    cell(6,  QString::number(totalD,  'f', 2));                // المبلغ $
+    cell(5,  QString::number(costDollar, 'f', 2));             // الكلفة $ (always dollars)
+    cell(6,  QString::number(totalD,  'f', 2));                // المبلغ $ (always dollars)
     cell(7,  QString::number(totalDn, 'f', 0));                // المبلغ دينار
     cell(8,  m_wholesaleDollarEdit->text());                   // سعر جملة $
     cell(9,  m_retailDollarEdit->text());                      // سعر مفرد $
     cell(10, QString::number(prodId));                         // hidden ID
 
-    // Update grand totals
+    // Update grand totals (always in dollars)
     double grand = 0;
     for (int r = 0; r < m_itemsTable->rowCount(); r++)
         if (m_itemsTable->item(r, 6))
@@ -570,6 +573,7 @@ void PurchaseWindow::addItem()
     m_qtyEdit->setText("0");
     m_totalDollarEdit->setText("0");
     m_totalDinarEdit->setText("0");
+    updateCurrencyLock();
 }
 
 void PurchaseWindow::deleteItem()
@@ -588,6 +592,7 @@ void PurchaseWindow::deleteItem()
             grand += m_itemsTable->item(r, 6)->text().toDouble();
     m_grandTotalDollarEdit->setText(QString::number(grand, 'f', 2));
     m_grandTotalDinarEdit->setText(QString::number(grand * rate, 'f', 0));
+    updateCurrencyLock();
 }
 
 void PurchaseWindow::saveInvoice()
@@ -637,37 +642,42 @@ void PurchaseWindow::saveInvoice()
     }
 
     // ── Accounting logic ──
+    // Sign convention (per requirement):
+    //   آجل  → NEGATIVE: we owe the supplier  → balance -= net
+    //   نقدي → POSITIVE: we paid the supplier → balance += paid
     QSqlQuery upd;
+    double netD  = totalDollar - (isDinar ? 0.0 : discount / rate);
+    double netDn = totalDinar  - (isDinar ? discount : 0.0);
+    if (netD  < 0) netD  = 0;
+    if (netDn < 0) netDn = 0;
+
     if (payType == QString::fromUtf8("آجل")) {
-        // Deferred: full net amount becomes a debit (we owe the supplier)
-        double netD  = totalDollar - (isDinar ? 0 : discount / rate);
-        double netDn = totalDinar  - (isDinar ? discount : 0);
-        upd.prepare("UPDATE customers SET balance_dollar = balance_dollar + ?,"
-                    " balance_dinar = balance_dinar + ? WHERE id=?");
-        upd.addBindValue(netD  > 0 ? netD  : 0.0);
-        upd.addBindValue(netDn > 0 ? netDn : 0.0);
+        // Deferred purchase: subtract from balance (we owe the supplier, negative)
+        upd.prepare("UPDATE customers SET balance_dollar = balance_dollar - ?,"
+                    " balance_dinar = balance_dinar - ? WHERE id=?");
+        upd.addBindValue(netD);
+        upd.addBindValue(netDn);
         upd.addBindValue(suppId);
         upd.exec();
     } else {
-        // نقدي: add unpaid shortfall to supplier balance
-        double netD      = totalDollar - (isDinar ? 0 : discount / rate);
-        double netDn     = totalDinar  - (isDinar ? discount : 0);
-        double shortD    = netD  - paidDollar;
-        double shortDn   = netDn - paidDinar;
-        if (shortD > 0.001 || shortDn > 0.001) {
-            upd.prepare("UPDATE customers SET balance_dollar = balance_dollar + ?,"
-                        " balance_dinar = balance_dinar + ? WHERE id=?");
-            upd.addBindValue(shortD  > 0 ? shortD  : 0.0);
-            upd.addBindValue(shortDn > 0 ? shortDn : 0.0);
-            upd.addBindValue(suppId);
-            upd.exec();
-        }
+        // Cash purchase: add paid amount to balance (positive — we paid them)
+        upd.prepare("UPDATE customers SET balance_dollar = balance_dollar + ?,"
+                    " balance_dinar = balance_dinar + ? WHERE id=?");
+        upd.addBindValue(paidDollar);
+        upd.addBindValue(paidDinar);
+        upd.addBindValue(suppId);
+        upd.exec();
     }
 
     m_currentInvoiceId = invId;
     m_invoiceNoSpin->setValue(invId);
+
+    // Reload products so next selection shows updated prices and stock
+    loadProducts();
+
     // Refresh supplier balance display
     onSupplierChanged(m_supplierCombo->currentIndex());
+    updateCurrencyLock();
 
     QMessageBox::information(this,
         QString::fromUtf8("تم"),
@@ -688,6 +698,18 @@ void PurchaseWindow::clearForm()
     m_paidDinarEdit->setText("0");
     m_discountEdit->setText("0");
     m_notesEdit->clear();
+    m_stockLabel->setText(QString::fromUtf8("رصيد: 0"));
+    updateCurrencyLock();   // re-enable currency combo when table is empty
+}
+
+void PurchaseWindow::updateCurrencyLock()
+{
+    bool hasItems = (m_itemsTable->rowCount() > 0);
+    m_currencyCombo->setEnabled(!hasItems);
+    // Visual cue: grey out when locked
+    m_currencyCombo->setStyleSheet(hasItems
+        ? "background:#cccccc; color:#666666; border:1px solid #aaaaaa;"
+        : "");
 }
 
 void PurchaseWindow::printInvoice()
