@@ -265,13 +265,6 @@ void SalesWindow::setupUI()
     m_productCombo->setMinimumWidth(200);
     m_productCombo->setPlaceholderText(QString::fromUtf8("اسم المادة"));
 
-    m_unitCombo = new QComboBox;
-    m_unitCombo->addItems({
-        QString::fromUtf8("كرتونة"),
-        QString::fromUtf8("قطعة")
-    });
-    m_unitCombo->setFixedWidth(75);
-
     m_qtyEdit       = new QLineEdit("0"); m_qtyEdit->setFixedWidth(60);
     m_unitPriceEdit = new QLineEdit("0"); m_unitPriceEdit->setFixedWidth(90);
     m_totalEdit     = new QLineEdit("0"); m_totalEdit->setFixedWidth(90);
@@ -303,7 +296,6 @@ void SalesWindow::setupUI()
     itemRow->addWidget(m_itemSeqLabel);
     itemRow->addWidget(m_barcodeCombo);
     itemRow->addWidget(m_productCombo);
-    itemRow->addWidget(m_unitCombo);
     itemRow->addWidget(lbl(QString::fromUtf8("الكمية")));
     itemRow->addWidget(m_qtyEdit);
     itemRow->addWidget(lbl(QString::fromUtf8("السعر")));
@@ -530,7 +522,6 @@ void SalesWindow::setupUI()
     custInfo->addWidget(m_phoneEdit,                            0, 3);
     custInfo->addWidget(lbl(QString::fromUtf8("المجهز")),      0, 4);
     custInfo->addWidget(m_driverCombo,                          0, 5);
-    custInfo->addWidget(m_unitCombo,                            0, 6);
     custInfo->addWidget(lbl(QString::fromUtf8("اسم السائق")), 1, 0);
     custInfo->addWidget(new QComboBox,                          1, 1);
     custInfo->addWidget(lbl(QString::fromUtf8("رقم السيارة")),1, 2);
@@ -640,11 +631,6 @@ void SalesWindow::setupUI()
     m_totalCountLabel->setAlignment(Qt::AlignCenter);
     m_totalCountLabel->setFixedWidth(45);
 
-    QPushButton *recvBtn = toolBtn("🤲", QString::fromUtf8("قبض"));
-    QPushButton *viewBtn = toolBtn("👁",  QString::fromUtf8("معاينة"));
-    QPushButton *fwdBtn  = toolBtn("➡",  QString::fromUtf8("إرسال"));
-    QPushButton *sigBtn  = toolBtn("✋",  QString::fromUtf8("توقيع"));
-
     tbl->addWidget(m_saveBtn);
     tbl->addWidget(m_newBtn);
     tbl->addWidget(m_searchBtn);
@@ -666,10 +652,6 @@ void SalesWindow::setupUI()
     tbl->addWidget(m_totalCountLabel);
     tbl->addWidget(m_nextBtn);
     tbl->addWidget(m_lastBtn);
-    tbl->addWidget(recvBtn);
-    tbl->addWidget(viewBtn);
-    tbl->addWidget(fwdBtn);
-    tbl->addWidget(sigBtn);
 
     root->addWidget(toolbar);
 
@@ -708,6 +690,21 @@ void SalesWindow::setupUI()
     /* invoice type change (مفرد/جملة) → re-price all items */
     connect(m_invoiceTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &SalesWindow::onInvoiceTypeChanged);
+
+    /* barcode → select matching product */
+    auto selectByBarcode = [this]() {
+        QString txt = m_barcodeCombo->currentText().trimmed();
+        if (txt.isEmpty()) return;
+        int idx = m_barcodeCombo->findText(txt);
+        if (idx < 0) return;
+        int pid  = m_barcodeCombo->itemData(idx).toInt();
+        int pIdx = m_productCombo->findData(pid);
+        if (pIdx >= 0) m_productCombo->setCurrentIndex(pIdx);
+    };
+    connect(m_barcodeCombo, QOverload<int>::of(&QComboBox::activated),
+            [selectByBarcode](int){ selectByBarcode(); });
+    connect(m_barcodeCombo->lineEdit(), &QLineEdit::editingFinished,
+            [selectByBarcode](){ selectByBarcode(); });
 
     /* in-table product name change via delegate */
     connect(m_itemsTable, &QTableWidget::itemChanged,
@@ -1011,6 +1008,9 @@ void SalesWindow::clearForm()
     m_itemSeqLabel->setText("1");
     m_timeLabel->setText(QTime::currentTime().toString("hh:mm AP"));
     m_printedCheck->setChecked(false);
+    // Re-load price for the currently selected product
+    if (m_productCombo->currentIndex() >= 0)
+        onProductSelected(m_productCombo->currentIndex());
 }
 
 void SalesWindow::loadInvoice(int id)

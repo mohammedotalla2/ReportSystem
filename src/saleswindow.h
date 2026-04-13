@@ -123,7 +123,6 @@ private:
     /* ── Current item entry row ── */
     QComboBox   *m_barcodeCombo;
     QComboBox   *m_productCombo;
-    QComboBox   *m_unitCombo;
     QLineEdit   *m_qtyEdit;
     QLineEdit   *m_unitPriceEdit;
     QLineEdit   *m_totalEdit;
