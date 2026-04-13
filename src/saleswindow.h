@@ -10,7 +10,36 @@
 #include <QDateEdit>
 #include <QCheckBox>
 #include <QSpinBox>
+#include <QList>
 #include "printmanager.h"
+
+struct WaitedInvoiceItem {
+    int    productId;
+    QString productName;
+    QString unit;
+    double qty;
+    double unitPrice;
+    double total;
+    QString notes;
+};
+
+struct WaitedInvoice {
+    int    customerId;
+    QString customerName;
+    QString address;
+    QString phone;
+    QDate  date;
+    QString paymentType;
+    QString currency;
+    QString invoiceType;
+    double exchangeRate;
+    QString receiver;
+    QString notes;
+    double receivedDollar;
+    double receivedDinar;
+    double discount;
+    QList<WaitedInvoiceItem> items;
+};
 
 class SalesWindow : public QDialog
 {
@@ -32,6 +61,8 @@ private slots:
     void exportPDF();
     void printPreparationList();
     void showCustomerStatement();
+    void addToWait();
+    void retrieveFromWait();
 
     /* --- Logic & Calculation Slots --- */
     void onProductSelected(int index);
@@ -143,6 +174,7 @@ private:
     int m_currentInvoiceId;
     int m_totalInvoices;
     PrintManager *m_printer;
+    QList<WaitedInvoice> m_waitList;
 };
 
 #endif // SALESWINDOW_H
