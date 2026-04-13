@@ -132,10 +132,12 @@ void PurchaseWindow::setupUI()
     m_itemsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_itemsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_itemsTable->setMinimumHeight(300);
+    m_itemsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
     tableLayout->addWidget(m_itemsTable);
+    addInputRow(); // سطر إدخال فارغ في أعلى الجدول دائماً
 
-    // Item entry row
+    // Item entry row (kept for reference fields like cost/wholesale/retail)
     QHBoxLayout *itemRow = new QHBoxLayout;
     m_barcodeCombo = new QComboBox; m_barcodeCombo->setEditable(true);
     m_barcodeCombo->setPlaceholderText(QString::fromUtf8("الباركود"));
@@ -525,4 +527,79 @@ void PurchaseWindow::onCurrencyChanged()
     double grandRate = toDinar ? rate : 1.0;
     m_grandTotalDollarEdit->setText(QString::number(grand, 'f', 2));
     m_grandTotalDinarEdit->setText(QString::number(grand * grandRate, 'f', 0));
+}
+
+// =====================================================================
+// addInputRow — يُضيف سطر إدخال فارغ في أعلى الجدول (row 0) يحتوي
+// على قائمة منسدلة لاختيار المادة. عند الاختيار يُرحَّل السطر للأسفل
+// ويُفتح سطر فارغ جديد في الأعلى.
+// =====================================================================
+void PurchaseWindow::addInputRow()
+{
+    m_itemsTable->insertRow(0);
+
+    // قائمة منسدلة للمادة في عمود اسم المادة (col 2)
+    QComboBox *prodCombo = new QComboBox;
+    prodCombo->setEditable(true);
+    prodCombo->setPlaceholderText(QString::fromUtf8("-- اختر أو ابحث عن مادة --"));
+    // ملء القائمة من m_productCombo الرئيسي
+    for (int i = 0; i < m_productCombo->count(); ++i)
+        prodCombo->addItem(m_productCombo->itemText(i), m_productCombo->itemData(i));
+
+    m_itemsTable->setCellWidget(0, 2, prodCombo);
+
+    // عمود الكمية (col 3) – قابل للتعديل في السطر الفارغ
+    m_itemsTable->setItem(0, 3, new QTableWidgetItem("1"));
+
+    // باقي الأعمدة فارغة في البداية
+    for (int c : {0, 1, 4, 5, 6, 7, 8})
+        m_itemsTable->setItem(0, c, new QTableWidgetItem(""));
+
+    // ── عند اختيار مادة من القائمة، ارحّل السطر وأضف سطر جديد ──
+    connect(prodCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this, prodCombo](int index) {
+        if (index <= 0) return;
+
+        int prodId = prodCombo->currentData().toInt();
+        QSqlQuery q;
+        q.prepare("SELECT barcode, name, cost_price, wholesale_dollar, retail_dollar, "
+                  "wholesale_dinar, retail_dinar, stock_qty FROM products WHERE id=?");
+        q.addBindValue(prodId); q.exec();
+        if (!q.next()) return;
+
+        double rate = m_exchangeRateEdit->text().toDouble();
+        if (rate <= 0) rate = Database::getExchangeRate();
+        double qty  = 1.0;
+        if (auto *qi = m_itemsTable->item(0, 3)) qty = qi->text().toDouble();
+        if (qty <= 0) qty = 1.0;
+
+        double cost  = q.value(2).toDouble();
+        double total = qty * cost;
+
+        // ملء بيانات السطر 0
+        m_itemsTable->setItem(0, 0, new QTableWidgetItem(q.value(0).toString())); // باركود
+        m_itemsTable->setItem(0, 1, new QTableWidgetItem(QString::number(prodId)));// رمز
+        // col 2 يحتوي الـ widget — لا نغيره، نقرأ منه فقط
+        m_itemsTable->setItem(0, 3, new QTableWidgetItem(QString::number(qty)));
+        m_itemsTable->setItem(0, 4, new QTableWidgetItem(QString::number(cost,'f',2)));
+        m_itemsTable->setItem(0, 5, new QTableWidgetItem(QString::number(total*rate,'f',0)));
+        m_itemsTable->setItem(0, 6, new QTableWidgetItem(QString::number(cost,'f',2)));
+        m_itemsTable->setItem(0, 7, new QTableWidgetItem(QString::number(total,'f',2)));
+        m_itemsTable->setItem(0, 8, new QTableWidgetItem(
+            QString::number(q.value(4).toDouble(),'f',2)));
+
+        // تحديث معلومات المادة في الفوتر
+        m_stockLabel->setText(QString::fromUtf8("رصيد: ") + q.value(7).toString());
+        m_lastPurchasePriceLabel->setText(QString::number(q.value(6).toDouble(),'f',0));
+
+        // تحديث الإجماليات
+        double grand = 0;
+        for (int r = 0; r < m_itemsTable->rowCount(); r++)
+            if (m_itemsTable->item(r, 7)) grand += m_itemsTable->item(r, 7)->text().toDouble();
+        m_grandTotalDollarEdit->setText(QString::number(grand,'f',2));
+        m_grandTotalDinarEdit->setText(QString::number(grand*rate,'f',0));
+
+        // أضف سطر فارغ جديد في الأعلى
+        addInputRow();
+    });
 }

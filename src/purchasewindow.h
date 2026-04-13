@@ -27,6 +27,7 @@ private slots:
 private:
     void setupUI(); void applyStyles();
     void loadSuppliers(); void loadProducts();
+    void addInputRow();
 
     QSpinBox *m_invoiceNoSpin;
     QComboBox *m_supplierCombo;

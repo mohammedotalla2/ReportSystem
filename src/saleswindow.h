@@ -74,7 +74,7 @@ private:
     QLineEdit   *m_carNoEdit;
 
     /* ── Right product-selection panel ── */
-    QComboBox    *m_groupCombo;
+    QTableWidget *m_groupTable;
     QLineEdit    *m_partNameEdit;
     QTableWidget *m_productList;
 

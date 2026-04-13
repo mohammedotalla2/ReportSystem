@@ -472,11 +472,18 @@ void SalesWindow::setupUI()
 
     QLabel *grpLbl = new QLabel(QString::fromUtf8("حسب المجموعة"));
     grpLbl->setObjectName("panelTitle");
-    m_groupCombo = new QComboBox;
-    m_groupCombo->setEditable(true);
-    m_groupCombo->addItem(QString::fromUtf8("كل الاصناف"));
 
-    QLabel *partLbl = new QLabel(QString::fromUtf8("جزء من الاسم"));
+    // جدول صغير للمجموعات بدلاً من القائمة المنسدلة
+    m_groupTable = new QTableWidget(0, 1);
+    m_groupTable->setObjectName("groupTable");
+    m_groupTable->setHorizontalHeaderLabels({QString::fromUtf8("المجموعة")});
+    m_groupTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_groupTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_groupTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_groupTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_groupTable->setMaximumHeight(140);
+
+    QLabel *partLbl = new QLabel(QString::fromUtf8("جزء من الاسم / باركود"));
     m_partNameEdit = new QLineEdit;
 
     m_productList = new QTableWidget(0, 2);
@@ -489,7 +496,7 @@ void SalesWindow::setupUI()
     m_productList->setSelectionBehavior(QAbstractItemView::SelectRows);
 
     rvl->addWidget(grpLbl);
-    rvl->addWidget(m_groupCombo);
+    rvl->addWidget(m_groupTable);
     rvl->addWidget(partLbl);
     rvl->addWidget(m_partNameEdit);
     rvl->addWidget(m_productList);
@@ -622,34 +629,31 @@ void SalesWindow::setupUI()
     connect(m_qtyEdit,        &QLineEdit::textChanged, this, &SalesWindow::onQtyChanged);
     connect(m_unitPriceEdit,  &QLineEdit::textChanged, this, &SalesWindow::onQtyChanged);
 
-    /* filter product list by name */
-    connect(m_partNameEdit, &QLineEdit::textChanged, [this](const QString &txt) {
-        QString grp = m_groupCombo->currentText();
+    /* helper lambda: apply both filters */
+    auto applyFilters = [this]() {
+        QString txt = m_partNameEdit->text();
+        QString grp;
+        auto sel = m_groupTable->selectedItems();
+        if (!sel.isEmpty()) grp = sel.first()->text();
         bool allGroups = (grp == QString::fromUtf8("كل الاصناف") || grp.isEmpty());
         for (int r = 0; r < m_productList->rowCount(); ++r) {
             auto *nm = m_productList->item(r, 1);
             if (!nm) continue;
-            bool nameMatch = nm->text().contains(txt, Qt::CaseInsensitive);
+            bool nameMatch = txt.isEmpty() || nm->text().contains(txt, Qt::CaseInsensitive);
             QString itemGrp = nm->data(Qt::UserRole + 1).toString();
             bool grpMatch = allGroups || (itemGrp == grp);
             m_productList->setRowHidden(r, !(nameMatch && grpMatch));
         }
+    };
+
+    /* filter by name/barcode */
+    connect(m_partNameEdit, &QLineEdit::textChanged, [applyFilters](const QString &) {
+        applyFilters();
     });
 
-    /* filter product list by group */
-    connect(m_groupCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            [this](int) {
-        QString grp = m_groupCombo->currentText();
-        QString txt = m_partNameEdit->text();
-        bool allGroups = (grp == QString::fromUtf8("كل الاصناف") || grp.isEmpty());
-        for (int r = 0; r < m_productList->rowCount(); ++r) {
-            auto *nm = m_productList->item(r, 1);
-            if (!nm) continue;
-            bool nameMatch = nm->text().contains(txt, Qt::CaseInsensitive);
-            QString itemGrp = nm->data(Qt::UserRole + 1).toString();
-            bool grpMatch = allGroups || (itemGrp == grp);
-            m_productList->setRowHidden(r, !(nameMatch && grpMatch));
-        }
+    /* filter by group table selection */
+    connect(m_groupTable, &QTableWidget::itemSelectionChanged, [applyFilters]() {
+        applyFilters();
     });
 
     /* select product from right panel */
@@ -684,6 +688,10 @@ void SalesWindow::applyStyles()
         #productList QHeaderView::section {
             background:#003388; color:white; font-weight:bold; padding:3px;
         }
+        #groupTable QHeaderView::section {
+            background:#005522; color:white; font-weight:bold; padding:3px;
+        }
+        #groupTable { background:white; selection-background-color:#c8f0d8; }
 
         #toolbar      { background:#556677; border-top:1px solid #334455; }
         #toolBtn      { background:#778899; border:1px solid #556; color:white; border-radius:3px; }
@@ -727,11 +735,18 @@ void SalesWindow::loadProducts()
     m_barcodeCombo->clear();
     m_productList->setRowCount(0);
 
-    // Reload groups
-    m_groupCombo->clear();
-    m_groupCombo->addItem(QString::fromUtf8("كل الاصناف"));
-    for (const QString &g : Database::getProductGroups())
-        m_groupCombo->addItem(g);
+    // Reload group table
+    m_groupTable->setRowCount(0);
+    {
+        int gr = 0;
+        m_groupTable->insertRow(gr);
+        m_groupTable->setItem(gr++, 0, new QTableWidgetItem(QString::fromUtf8("كل الاصناف")));
+        for (const QString &g : Database::getProductGroups()) {
+            m_groupTable->insertRow(gr);
+            m_groupTable->setItem(gr++, 0, new QTableWidgetItem(g));
+        }
+        m_groupTable->selectRow(0); // select "كل الاصناف" by default
+    }
 
     QSqlQuery q = Database::getProducts();
     int row = 0;
@@ -982,8 +997,53 @@ void SalesWindow::saveInvoice()
     m_currentInvoiceId = id;
     m_invoiceNoSpin->setValue(id);
     m_navLabel->setText(QString::number(id));
+
+    // ── معالجة النقص (Shortage handling) ──
+    double invoiceTotal = m_totalDollarLabel->text().toDouble();
+    double receivedDollar = m_receivedDollarEdit->text().toDouble();
+    double receivedDinar  = m_receivedDinarEdit->text().toDouble();
+    double rate = m_exchangeRateEdit->text().toDouble();
+    if (rate <= 0) rate = Database::getExchangeRate();
+    bool isDinar = (m_currencyCombo->currentText() == QString::fromUtf8("دينار"));
+
+    // حساب المبلغ المستلم بعملة الفاتورة
+    double totalReceived = isDinar
+        ? (receivedDinar + receivedDollar * rate)
+        : (receivedDollar + receivedDinar / rate);
+    double shortage = invoiceTotal - totalReceived;
+
+    if (shortage > 0.001) {
+        // خصم النقص من رصيد الزبون
+        QSqlQuery qBal;
+        qBal.prepare("SELECT balance_dollar, balance_dinar FROM customers WHERE id=?");
+        qBal.addBindValue(custId); qBal.exec();
+        if (qBal.next()) {
+            double balD  = qBal.value(0).toDouble();
+            double balDn = qBal.value(1).toDouble();
+            double newBalD, newBalDn;
+            if (isDinar) {
+                newBalDn = balDn - shortage;
+                newBalD  = balD;
+            } else {
+                newBalD  = balD - shortage;
+                newBalDn = balDn;
+            }
+            QSqlQuery qUpd;
+            qUpd.prepare("UPDATE customers SET balance_dollar=?, balance_dinar=? WHERE id=?");
+            qUpd.addBindValue(newBalD);
+            qUpd.addBindValue(newBalDn);
+            qUpd.addBindValue(custId);
+            qUpd.exec();
+            // تحديث عرض الرصيد
+            m_balDollarLabel->setText(QString::number(newBalD,'f',2));
+            m_balDinarLabel->setText(QString::number(newBalDn,'f',0));
+        }
+    }
+
     QMessageBox::information(this, QString::fromUtf8("تم"),
-        QString::fromUtf8("تم حفظ الفاتورة رقم: ") + QString::number(id));
+        QString::fromUtf8("تم حفظ الفاتورة رقم: ") + QString::number(id) +
+        (shortage > 0.001 ? QString::fromUtf8("\nمتبقي على الزبون: ") +
+            QString::number(shortage,'f',2) : ""));
 }
 
 void SalesWindow::printInvoice()
