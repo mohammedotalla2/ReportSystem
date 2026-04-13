@@ -1041,26 +1041,41 @@ void SalesWindow::loadInvoice(int id)
 
     m_itemsTable->blockSignals(true);
     m_itemsTable->setRowCount(0);
+    QString invCur = q.value(3).toString();
+    bool invDinar  = (invCur != "$");
     QSqlQuery qi;
-    qi.prepare("SELECT p.name, si.qty, si.unit_price_dollar, si.total_dollar, "
-               "p.barcode, si.product_id "
+    qi.prepare("SELECT p.name, si.qty, si.unit_price_dollar, si.unit_price_dinar, "
+               "si.total_dollar, si.total_dinar, p.barcode, si.product_id "
                "FROM sales_items si "
                "LEFT JOIN products p ON si.product_id = p.id "
                "WHERE si.invoice_id = ?");
     qi.addBindValue(id); qi.exec();
     int row = 0;
     while (qi.next()) {
+        // Pick the price/total for the invoice's currency; fall back to the other if the preferred is zero
+        double priceDollar = qi.value(2).toDouble();
+        double priceDinar  = qi.value(3).toDouble();
+        double totDollar   = qi.value(4).toDouble();
+        double totDinar    = qi.value(5).toDouble();
+        double dispPrice, dispTotal;
+        if (invDinar) {
+            dispPrice = (priceDinar != 0.0) ? priceDinar : priceDollar;
+            dispTotal = (totDinar   != 0.0) ? totDinar   : totDollar;
+        } else {
+            dispPrice = priceDollar;
+            dispTotal = totDollar;
+        }
         m_itemsTable->insertRow(row);
         m_itemsTable->setItem(row, 0, new QTableWidgetItem(QString::number(row + 1)));
-        m_itemsTable->setItem(row, 1, new QTableWidgetItem(qi.value(4).toString()));
-        m_itemsTable->setItem(row, 2, new QTableWidgetItem(QString::number(qi.value(5).toInt())));
+        m_itemsTable->setItem(row, 1, new QTableWidgetItem(qi.value(6).toString()));
+        m_itemsTable->setItem(row, 2, new QTableWidgetItem(QString::number(qi.value(7).toInt())));
         m_itemsTable->setItem(row, 3, new QTableWidgetItem(qi.value(0).toString()));
         m_itemsTable->setItem(row, 4, new QTableWidgetItem(QString::number(qi.value(1).toDouble())));
-        m_itemsTable->setItem(row, 5, new QTableWidgetItem(QString::number(qi.value(2).toDouble(), 'f', 2)));
-        m_itemsTable->setItem(row, 6, new QTableWidgetItem(QString::number(qi.value(3).toDouble(), 'f', 2)));
+        m_itemsTable->setItem(row, 5, new QTableWidgetItem(QString::number(dispPrice, 'f', invDinar ? 0 : 2)));
+        m_itemsTable->setItem(row, 6, new QTableWidgetItem(QString::number(dispTotal, 'f', invDinar ? 0 : 2)));
         m_itemsTable->setItem(row, 7, new QTableWidgetItem(""));
-        m_itemsTable->setItem(row, 8, new QTableWidgetItem(q.value(3).toString()));
-        m_itemsTable->setItem(row, 9, new QTableWidgetItem(QString::number(qi.value(5).toInt())));
+        m_itemsTable->setItem(row, 8, new QTableWidgetItem(invCur));
+        m_itemsTable->setItem(row, 9, new QTableWidgetItem(QString::number(qi.value(7).toInt())));
         ++row;
     }
     m_itemsTable->blockSignals(false);

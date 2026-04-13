@@ -291,10 +291,17 @@ QString PrintManager::generateSalesInvoiceHtml(int invoiceId,
 
     int row=1; double totD=0, totDin=0;
     while (qit.next()) {
-        double unitPrice = isDinar ? qit.value(3).toDouble() : qit.value(2).toDouble();
-        double lineTotal = isDinar ? qit.value(5).toDouble() : qit.value(4).toDouble();
-        QString fmt      = isDinar ? QString::number(unitPrice,'f',0) : QString::number(unitPrice,'f',2);
-        QString fmtTot   = isDinar ? QString::number(lineTotal,'f',0) : QString::number(lineTotal,'f',2);
+        double pDollar = qit.value(2).toDouble();
+        double pDinar  = qit.value(3).toDouble();
+        double tDollar = qit.value(4).toDouble();
+        double tDinar  = qit.value(5).toDouble();
+        // Backward-compat: old dinar invoices stored price in dollar field
+        double unitPrice = isDinar ? (pDinar != 0.0 ? pDinar : pDollar)
+                                   : pDollar;
+        double lineTotal = isDinar ? (tDinar != 0.0 ? tDinar : tDollar)
+                                   : tDollar;
+        QString fmt    = isDinar ? QString::number(unitPrice,'f',0) : QString::number(unitPrice,'f',2);
+        QString fmtTot = isDinar ? QString::number(lineTotal,'f',0) : QString::number(lineTotal,'f',2);
         h += "<tr>"
              "<td>" + QString::number(row++) + "</td>"
              "<td>" + qit.value(0).toString() + "</td>"
@@ -302,8 +309,8 @@ QString PrintManager::generateSalesInvoiceHtml(int invoiceId,
              "<td>" + fmt    + "</td>"
              "<td>" + fmtTot + "</td>"
              "</tr>";
-        totD   += qit.value(4).toDouble();
-        totDin += qit.value(5).toDouble();
+        if (isDinar) totDin += lineTotal;
+        else         totD   += lineTotal;
     }
     if (isDinar) {
         h += "<tr class='tot'>"
