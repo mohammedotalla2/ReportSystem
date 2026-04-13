@@ -21,6 +21,7 @@ private slots:
     void onCurrencyChanged();
     void addItem(); void deleteItem();
     void saveInvoice(); void clearForm();
+    void newInvoice();
     void printInvoice(); void exportPDF();
     void calculateTotals();
     void navigateFirst(); void navigatePrev();
@@ -60,7 +61,7 @@ private:
     QLabel     *m_paidCurrLbl;      // "مدفوع $" / "مدفوع دينار"
 
     QPushButton *m_saveBtn, *m_deleteBtn, *m_searchBtn;
-    QPushButton *m_printBtn, *m_pdfBtn;
+    QPushButton *m_newBtn, *m_printBtn, *m_pdfBtn;
     QPushButton *m_firstBtn, *m_prevBtn, *m_nextBtn, *m_lastBtn;
     QPushButton *m_totalExpensesBtn;
     QPushButton *m_closeBtn;

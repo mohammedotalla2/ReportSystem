@@ -303,6 +303,8 @@ void PurchaseWindow::setupUI()
     m_deleteBtn = makeBtn(QString::fromUtf8("✖"),  QString::fromUtf8("حذف"));
     m_searchBtn = makeBtn(QString::fromUtf8("🔍"), QString::fromUtf8("بحث"));
     m_printBtn  = makeBtn(QString::fromUtf8("🖨"),  QString::fromUtf8("طباعة"));
+    m_newBtn    = new QPushButton(QString::fromUtf8("فاتورة جديدة"));
+    m_newBtn->setFixedHeight(36); m_newBtn->setObjectName("newInvBtn");
     m_pdfBtn    = new QPushButton("PDF");
     m_pdfBtn->setFixedHeight(36);
     m_pdfBtn->setObjectName("pdfBtn");
@@ -346,6 +348,7 @@ void PurchaseWindow::setupUI()
     toolLayout->addWidget(m_searchBtn);
     toolLayout->addWidget(m_deleteBtn);
     toolLayout->addWidget(m_printBtn);
+    toolLayout->addWidget(m_newBtn);
     toolLayout->addWidget(m_pdfBtn);
     toolLayout->addWidget(lbl(QString::fromUtf8("المنظم")));
     toolLayout->addWidget(m_organiserSpin);
@@ -378,6 +381,7 @@ void PurchaseWindow::setupUI()
     connect(m_nextBtn,   &QPushButton::clicked, this, &PurchaseWindow::navigateNext);
     connect(m_lastBtn,   &QPushButton::clicked, this, &PurchaseWindow::navigateLast);
     connect(m_closeBtn,  &QPushButton::clicked, this, &PurchaseWindow::close);
+    connect(m_newBtn,    &QPushButton::clicked, this, &PurchaseWindow::newInvoice);
 
     connect(m_productCombo,
             QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -434,8 +438,10 @@ void PurchaseWindow::applyStyles()
         #expBtn { background: #bb44ff; color: white; font-weight: bold; border-radius: 3px;
                   border: 1px solid #880099; padding: 0 8px; }
         #expLbl { color: #ffff00; font-weight: bold; }
-        #addBtn { background: #44aa44; color: white; border-radius: 3px; border: 1px solid #228822; }
-        #delBtn { background: #aa4422; color: white; border-radius: 3px; border: 1px solid #882200; }
+        #addBtn    { background: #44aa44; color: white; border-radius: 3px; border: 1px solid #228822; }
+        #delBtn    { background: #aa4422; color: white; border-radius: 3px; border: 1px solid #882200; }
+        #newInvBtn { background: #2266cc; color: white; font-weight: bold; border-radius: 3px;
+                     border: 1px solid #1144aa; padding: 0 8px; }
         QComboBox { background: white; border: 1px solid #99aacc; border-radius: 2px; }
         QLineEdit { background: white; border: 1px solid #99aacc; border-radius: 2px; padding: 1px 4px; }
         QLabel { font-family: Tahoma; color: #003366; }
@@ -484,9 +490,18 @@ void PurchaseWindow::onProductSelected(int index)
     q.addBindValue(prodId);
     q.exec();
     if (q.next()) {
-        m_costPriceEdit->setText(QString::number(q.value(0).toDouble(), 'f', 2));
-        m_wholesaleDollarEdit->setText(QString::number(q.value(1).toDouble(), 'f', 2));
-        m_retailDollarEdit->setText(QString::number(q.value(2).toDouble(), 'f', 2));
+        bool   isDinar = (m_currencyCombo->currentText() == QString::fromUtf8("دينار"));
+        double rate    = m_exchangeRateEdit->text().toDouble();
+        if (rate <= 0) rate = Database::getExchangeRate();
+        double costD = q.value(0).toDouble();
+        double wsD   = q.value(1).toDouble();
+        double retD  = q.value(2).toDouble();
+        // Show prices in the active currency
+        int dp = isDinar ? 0 : 2;
+        double mul = isDinar ? rate : 1.0;
+        m_costPriceEdit->setText(QString::number(costD * mul, 'f', dp));
+        m_wholesaleDollarEdit->setText(QString::number(wsD * mul, 'f', dp));
+        m_retailDollarEdit->setText(QString::number(retD * mul, 'f', dp));
         m_stockLabel->setText(QString::fromUtf8("رصيد: ") + q.value(5).toString());
 
         // Update barcode without re-triggering onBarcodeSelected
@@ -702,6 +717,33 @@ void PurchaseWindow::clearForm()
     updateCurrencyLock();   // re-enable currency combo when table is empty
 }
 
+void PurchaseWindow::newInvoice()
+{
+    // Full reset: table + all invoice fields + supplier + item entry row
+    clearForm();
+
+    // Reset supplier combo
+    m_supplierCombo->blockSignals(true);
+    m_supplierCombo->setCurrentIndex(0);
+    m_supplierCombo->blockSignals(false);
+    m_supplierBalLabel->setText(QString::fromUtf8("رصيد المجهز $: 0"));
+    m_supplierBalDinarLabel->setText("0");
+
+    // Reset item entry row
+    m_blockBarcodeSignal = true;
+    m_productCombo->setCurrentIndex(-1);
+    m_barcodeCombo->setCurrentIndex(-1);
+    m_blockBarcodeSignal = false;
+    m_wholesaleDollarEdit->setText("0");
+    m_retailDollarEdit->setText("0");
+
+    // Reset invoice header fields
+    m_invoiceRefEdit->clear();
+    m_dateEdit->setDate(QDate::currentDate());
+    m_exchangeRateEdit->setText(
+        QString::number(Database::getExchangeRate(), 'f', 0));
+}
+
 void PurchaseWindow::updateCurrencyLock()
 {
     bool hasItems = (m_itemsTable->rowCount() > 0);
@@ -766,10 +808,12 @@ void PurchaseWindow::onCurrencyChanged()
     bool isDinar = (m_currencyCombo->currentText() == QString::fromUtf8("دينار"));
     QString sym  = isDinar ? QString::fromUtf8("دينار") : "$";
     QString syms = isDinar ? QString::fromUtf8("د")     : "$";
+    double rate  = m_exchangeRateEdit->text().toDouble();
+    if (rate <= 0) rate = Database::getExchangeRate();
 
     // ── Update all currency-symbol labels ──
     m_costCurrLbl->setText(QString::fromUtf8("كلفة ") + syms);
-    m_wsCurrLbl->setText(QString::fromUtf8("جملة ") + syms);
+    m_wsCurrLbl->setText(QString::fromUtf8("جملة ")  + syms);
     m_retCurrLbl->setText(QString::fromUtf8("مفرد ") + syms);
     m_lineTotCurrLbl->setText(syms);
     m_grandCurrLbl->setText(syms);
@@ -781,10 +825,19 @@ void PurchaseWindow::onCurrencyChanged()
     m_itemsTable->setHorizontalHeaderItem(6, new QTableWidgetItem(
         QString::fromUtf8("المبلغ ") + syms));
 
-    // ── Recalculate existing rows ──
-    double rate = m_exchangeRateEdit->text().toDouble();
-    if (rate <= 0) rate = Database::getExchangeRate();
+    // ── Convert entry-row price fields (كلفة / جملة / مفرد) ──
+    auto convertField = [&](QLineEdit *field) {
+        double v = field->text().toDouble();
+        if (isDinar)
+            field->setText(QString::number(v * rate, 'f', 0));   // $ → دينار
+        else
+            field->setText(QString::number(v / rate, 'f', 2));   // دينار → $
+    };
+    convertField(m_costPriceEdit);
+    convertField(m_wholesaleDollarEdit);
+    convertField(m_retailDollarEdit);
 
+    // ── Recalculate existing table rows ──
     for (int r = 0; r < m_itemsTable->rowCount(); r++) {
         auto *costItem = m_itemsTable->item(r, 5);
         auto *amtItem  = m_itemsTable->item(r, 6);
@@ -802,10 +855,10 @@ void PurchaseWindow::onCurrencyChanged()
     for (int r = 0; r < m_itemsTable->rowCount(); r++)
         if (m_itemsTable->item(r, 6))
             grand += m_itemsTable->item(r, 6)->text().toDouble();
-    QString fmt = isDinar ? QString::number(grand, 'f', 0) : QString::number(grand, 'f', 2);
-    m_grandTotalDollarEdit->setText(fmt);
-    m_grandTotalDinarEdit->setText(QString::number(grand * (isDinar ? 1.0 : rate), 'f', 0));
+    m_grandTotalDollarEdit->setText(
+        isDinar ? QString::number(grand, 'f', 0) : QString::number(grand, 'f', 2));
+    m_grandTotalDinarEdit->setText(
+        QString::number(grand * (isDinar ? 1.0 : rate), 'f', 0));
 
-    // ── Recalc current line entry ──
     calculateTotals();
 }
