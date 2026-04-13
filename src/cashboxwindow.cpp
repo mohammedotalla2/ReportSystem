@@ -12,6 +12,10 @@
 #include <QMessageBox>
 #include <QLabel>
 #include <QFrame>
+#include <QTabWidget>
+#include <QTableWidget>
+#include <QHeaderView>
+#include <QAbstractItemView>
 
 CashBoxWindow::CashBoxWindow(QWidget *parent) : QDialog(parent), m_currentId(-1)
 {
@@ -35,8 +39,6 @@ void CashBoxWindow::setupUI()
     titleLabel->setObjectName("titleLabel");
     titleLabel->setFont(QFont("Tahoma", 16, QFont::Bold));
     titleLabel->setAlignment(Qt::AlignCenter);
-    mainLayout->addWidget(titleLabel);
-
     // ===== HEADER GRID =====
     // In RTL mode, QGridLayout column 0 is the VISUAL RIGHT edge.
     // So: label at col N, widget at col N+1 (label RIGHT of widget).
@@ -250,8 +252,6 @@ void CashBoxWindow::setupUI()
     grid->addWidget(lbl(QString::fromUtf8("المنظم")), 10, 0);
     grid->addWidget(m_organiserEdit, 10, 1, 1, 6);
 
-    mainLayout->addWidget(headerWidget, 1);
-
     // ===== BOTTOM TOOLBAR =====
     QWidget *toolbar = new QWidget;
     toolbar->setObjectName("toolbar");
@@ -324,7 +324,28 @@ void CashBoxWindow::setupUI()
     toolLayout->addWidget(nextBtn);
     toolLayout->addWidget(lastBtn);
 
-    mainLayout->addWidget(toolbar);
+    // ===== TAB WIDGET =====
+    QWidget *tab0 = new QWidget;
+    QVBoxLayout *tab0Layout = new QVBoxLayout(tab0);
+    tab0Layout->setContentsMargins(0,0,0,0);
+    tab0Layout->setSpacing(4);
+    QLabel *titleLabel = new QLabel(QString::fromUtf8("أدامة حركات الصندوق"));
+    titleLabel->setObjectName("titleLabel");
+    titleLabel->setFont(QFont("Tahoma", 16, QFont::Bold));
+    titleLabel->setAlignment(Qt::AlignCenter);
+    tab0Layout->addWidget(titleLabel);
+    tab0Layout->addWidget(headerWidget, 1);
+    tab0Layout->addWidget(toolbar);
+
+    m_tabs = new QTabWidget;
+    m_tabs->setLayoutDirection(Qt::RightToLeft);
+    m_tabs->addTab(tab0,                     QString::fromUtf8("الصندوق"));
+    m_tabs->addTab(createTab1DailyReport(),   QString::fromUtf8("التقرير اليومي"));
+    m_tabs->addTab(createTab2VaultBalance(),  QString::fromUtf8("كشف الرصيد"));
+    m_tabs->addTab(createTab3ExchangeRates(), QString::fromUtf8("أسعار الصرف"));
+    m_tabs->addTab(createTab4AccountsLedger(),QString::fromUtf8("المقبوضات والمدفوعات"));
+    m_tabs->addTab(createTab5Discounts(),     QString::fromUtf8("السماحات"));
+    mainLayout->addWidget(m_tabs);
 
     // ===== SIGNAL CONNECTIONS =====
     connect(m_saveBtn,   &QPushButton::clicked, this, &CashBoxWindow::saveTransaction);
@@ -691,3 +712,325 @@ void CashBoxWindow::navigateLast()
 
 void CashBoxWindow::receiveFromCustomer() { m_typeCombo->setCurrentIndex(2); }
 void CashBoxWindow::payToCustomer()       { m_typeCombo->setCurrentIndex(1); }
+
+// ===== REPORT TAB BUILDERS =====
+
+QWidget* CashBoxWindow::createTab1DailyReport()
+{
+    QWidget *w = new QWidget;
+    QVBoxLayout *vl = new QVBoxLayout(w);
+    QHBoxLayout *fl = new QHBoxLayout;
+    fl->addWidget(new QLabel(QString::fromUtf8("اسم الزبون")));
+    m_drCustomerEdit = new QLineEdit;
+    fl->addWidget(m_drCustomerEdit);
+    fl->addWidget(new QLabel(QString::fromUtf8("من")));
+    m_drFromDate = new QDateEdit(QDate::currentDate().addDays(-30));
+    m_drFromDate->setDisplayFormat("yyyy-MM-dd");
+    fl->addWidget(m_drFromDate);
+    fl->addWidget(new QLabel(QString::fromUtf8("إلى")));
+    m_drToDate = new QDateEdit(QDate::currentDate());
+    m_drToDate->setDisplayFormat("yyyy-MM-dd");
+    fl->addWidget(m_drToDate);
+    QPushButton *searchBtn = new QPushButton(QString::fromUtf8("بحث"));
+    connect(searchBtn, &QPushButton::clicked, this, &CashBoxWindow::searchDailyReport);
+    fl->addWidget(searchBtn);
+    QPushButton *printBtn = new QPushButton(QString::fromUtf8("طباعة"));
+    fl->addWidget(printBtn);
+    fl->addStretch();
+    vl->addLayout(fl);
+
+    m_drTable = new QTableWidget(0, 7);
+    m_drTable->setHorizontalHeaderLabels({
+        QString::fromUtf8("الرقم"), QString::fromUtf8("النوع"),
+        QString::fromUtf8("الحساب"), QString::fromUtf8("المبلغ $"),
+        QString::fromUtf8("المبلغ دينار"), QString::fromUtf8("التاريخ"),
+        QString::fromUtf8("الملاحظات")
+    });
+    m_drTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Stretch);
+    m_drTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    vl->addWidget(m_drTable);
+
+    QHBoxLayout *totRow = new QHBoxLayout;
+    m_drNetDollar  = new QLabel("0"); m_drNetDinar   = new QLabel("0");
+    m_drTotalDollar= new QLabel("0"); m_drTotalDinar = new QLabel("0");
+    totRow->addWidget(new QLabel(QString::fromUtf8("صافي النشاط $:")));
+    totRow->addWidget(m_drNetDollar);
+    totRow->addWidget(new QLabel(QString::fromUtf8("د:")));
+    totRow->addWidget(m_drNetDinar);
+    totRow->addStretch();
+    totRow->addWidget(new QLabel(QString::fromUtf8("المجموع الكلي $:")));
+    totRow->addWidget(m_drTotalDollar);
+    totRow->addWidget(new QLabel(QString::fromUtf8("د:")));
+    totRow->addWidget(m_drTotalDinar);
+    vl->addLayout(totRow);
+    return w;
+}
+
+QWidget* CashBoxWindow::createTab2VaultBalance()
+{
+    QWidget *w = new QWidget;
+    QVBoxLayout *vl = new QVBoxLayout(w);
+    QHBoxLayout *fl = new QHBoxLayout;
+    fl->addWidget(new QLabel(QString::fromUtf8("من")));
+    m_vbFromDate = new QDateEdit(QDate::currentDate().addDays(-30));
+    m_vbFromDate->setDisplayFormat("yyyy-MM-dd");
+    fl->addWidget(m_vbFromDate);
+    fl->addWidget(new QLabel(QString::fromUtf8("إلى")));
+    m_vbToDate = new QDateEdit(QDate::currentDate());
+    m_vbToDate->setDisplayFormat("yyyy-MM-dd");
+    fl->addWidget(m_vbToDate);
+    QPushButton *dollarBtn = new QPushButton(QString::fromUtf8("دولار $"));
+    connect(dollarBtn, &QPushButton::clicked, this, [this](){ searchVaultBalance("$"); });
+    fl->addWidget(dollarBtn);
+    QPushButton *dinarBtn = new QPushButton(QString::fromUtf8("دينار"));
+    connect(dinarBtn, &QPushButton::clicked, this, [this](){ searchVaultBalance(QString::fromUtf8("دينار")); });
+    fl->addWidget(dinarBtn);
+    fl->addStretch();
+    vl->addLayout(fl);
+    m_vbTable = new QTableWidget(0, 8);
+    m_vbTable->setHorizontalHeaderLabels({
+        QString::fromUtf8("الرصيد"), QString::fromUtf8("القبض"),
+        QString::fromUtf8("الصرف"), QString::fromUtf8("رقم السند"),
+        QString::fromUtf8("التاريخ"), QString::fromUtf8("النوع"),
+        QString::fromUtf8("الاسم"), QString::fromUtf8("الملاحظات")
+    });
+    m_vbTable->horizontalHeader()->setSectionResizeMode(7, QHeaderView::Stretch);
+    vl->addWidget(m_vbTable);
+    return w;
+}
+
+QWidget* CashBoxWindow::createTab3ExchangeRates()
+{
+    QWidget *w = new QWidget;
+    QVBoxLayout *vl = new QVBoxLayout(w);
+    QHBoxLayout *fl = new QHBoxLayout;
+    fl->addWidget(new QLabel(QString::fromUtf8("من")));
+    m_erFromDate = new QDateEdit(QDate::currentDate().addDays(-365));
+    m_erFromDate->setDisplayFormat("yyyy-MM-dd");
+    fl->addWidget(m_erFromDate);
+    fl->addWidget(new QLabel(QString::fromUtf8("إلى")));
+    m_erToDate = new QDateEdit(QDate::currentDate());
+    m_erToDate->setDisplayFormat("yyyy-MM-dd");
+    fl->addWidget(m_erToDate);
+    QPushButton *searchBtn = new QPushButton(QString::fromUtf8("بحث"));
+    connect(searchBtn, &QPushButton::clicked, this, &CashBoxWindow::searchExchangeRates);
+    fl->addWidget(searchBtn);
+    fl->addStretch();
+    vl->addLayout(fl);
+    m_erTable = new QTableWidget(0, 3);
+    m_erTable->setHorizontalHeaderLabels({
+        QString::fromUtf8("التاريخ"), QString::fromUtf8("سعر الصرف"),
+        QString::fromUtf8("الملاحظات")
+    });
+    m_erTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    vl->addWidget(m_erTable);
+    return w;
+}
+
+QWidget* CashBoxWindow::createTab4AccountsLedger()
+{
+    QWidget *w = new QWidget;
+    QVBoxLayout *vl = new QVBoxLayout(w);
+    m_alSubTabs = new QTabWidget;
+
+    // Receipts sub-tab
+    QWidget *recW = new QWidget;
+    QVBoxLayout *rvl = new QVBoxLayout(recW);
+    QHBoxLayout *rfl = new QHBoxLayout;
+    QComboBox *recTypeCombo = new QComboBox;
+    recTypeCombo->addItems({QString::fromUtf8("ذمم العملاء"), QString::fromUtf8("إيرادات عامة"), QString::fromUtf8("ذمم الشركاء")});
+    rfl->addWidget(new QLabel(QString::fromUtf8("النوع"))); rfl->addWidget(recTypeCombo);
+    QPushButton *recSearch = new QPushButton(QString::fromUtf8("بحث"));
+    connect(recSearch, &QPushButton::clicked, this, &CashBoxWindow::searchAccountsLedger);
+    rfl->addWidget(recSearch); rfl->addStretch();
+    rvl->addLayout(rfl);
+    m_alReceiptsTable = new QTableWidget(0, 7);
+    m_alReceiptsTable->setHorizontalHeaderLabels({
+        QString::fromUtf8("الرقم"), QString::fromUtf8("النوع"), QString::fromUtf8("الحساب الفرعي"),
+        QString::fromUtf8("المبلغ $"), QString::fromUtf8("المبلغ دينار"),
+        QString::fromUtf8("التاريخ"), QString::fromUtf8("الملاحظات")
+    });
+    m_alReceiptsTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Stretch);
+    rvl->addWidget(m_alReceiptsTable);
+    m_alReceiptsTotal = new QLabel(QString::fromUtf8("الإجمالي: 0 $ | 0 دينار"));
+    rvl->addWidget(m_alReceiptsTotal);
+    m_alSubTabs->addTab(recW, QString::fromUtf8("المقبوضات"));
+
+    // Payments sub-tab
+    QWidget *payW = new QWidget;
+    QVBoxLayout *pvl = new QVBoxLayout(payW);
+    QHBoxLayout *pfl = new QHBoxLayout;
+    QComboBox *payTypeCombo = new QComboBox;
+    payTypeCombo->addItems({QString::fromUtf8("مصاريف عامة"), QString::fromUtf8("ذمم العملاء"), QString::fromUtf8("ذمم الشركاء"), QString::fromUtf8("مصاريف الاستيراد")});
+    pfl->addWidget(new QLabel(QString::fromUtf8("النوع"))); pfl->addWidget(payTypeCombo);
+    QPushButton *paySearch = new QPushButton(QString::fromUtf8("بحث"));
+    pfl->addWidget(paySearch); pfl->addStretch();
+    pvl->addLayout(pfl);
+    m_alPaymentsTable = new QTableWidget(0, 7);
+    m_alPaymentsTable->setHorizontalHeaderLabels({
+        QString::fromUtf8("الرقم"), QString::fromUtf8("النوع"), QString::fromUtf8("الحساب الفرعي"),
+        QString::fromUtf8("المبلغ $"), QString::fromUtf8("المبلغ دينار"),
+        QString::fromUtf8("التاريخ"), QString::fromUtf8("الملاحظات")
+    });
+    m_alPaymentsTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Stretch);
+    pvl->addWidget(m_alPaymentsTable);
+    m_alPaymentsTotal = new QLabel(QString::fromUtf8("الإجمالي: 0 $ | 0 دينار"));
+    pvl->addWidget(m_alPaymentsTotal);
+    m_alSubTabs->addTab(payW, QString::fromUtf8("المدفوعات"));
+
+    vl->addWidget(m_alSubTabs);
+    return w;
+}
+
+QWidget* CashBoxWindow::createTab5Discounts()
+{
+    QWidget *w = new QWidget;
+    QVBoxLayout *vl = new QVBoxLayout(w);
+    QHBoxLayout *fl = new QHBoxLayout;
+    fl->addWidget(new QLabel(QString::fromUtf8("من")));
+    m_discFromDate = new QDateEdit(QDate::currentDate().addDays(-30));
+    m_discFromDate->setDisplayFormat("yyyy-MM-dd");
+    fl->addWidget(m_discFromDate);
+    fl->addWidget(new QLabel(QString::fromUtf8("إلى")));
+    m_discToDate = new QDateEdit(QDate::currentDate());
+    m_discToDate->setDisplayFormat("yyyy-MM-dd");
+    fl->addWidget(m_discToDate);
+    QPushButton *searchBtn = new QPushButton(QString::fromUtf8("بحث"));
+    connect(searchBtn, &QPushButton::clicked, this, &CashBoxWindow::searchDiscounts);
+    fl->addWidget(searchBtn);
+    fl->addStretch();
+    vl->addLayout(fl);
+    m_discTable = new QTableWidget(0, 6);
+    m_discTable->setHorizontalHeaderLabels({
+        QString::fromUtf8("المبلغ $"), QString::fromUtf8("المبلغ دينار"),
+        QString::fromUtf8("اسم الزبون"), QString::fromUtf8("رقم السند"),
+        QString::fromUtf8("التاريخ"), QString::fromUtf8("الملاحظات")
+    });
+    m_discTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
+    vl->addWidget(m_discTable);
+    return w;
+}
+
+// ===== REPORT SEARCH SLOTS =====
+
+void CashBoxWindow::searchDailyReport()
+{
+    m_drTable->setRowCount(0);
+    QSqlQuery q;
+    q.prepare("SELECT id, type, main_account, amount_dollar, amount_dinar, date, notes "
+              "FROM cash_transactions WHERE date BETWEEN ? AND ? ORDER BY date DESC");
+    q.addBindValue(m_drFromDate->date().toString("yyyy-MM-dd"));
+    q.addBindValue(m_drToDate->date().toString("yyyy-MM-dd"));
+    if (!q.exec()) return;
+    static const QStringList typeNames = {
+        QString::fromUtf8("صرف مصاريف"), QString::fromUtf8("صرف ذمم"),
+        QString::fromUtf8("قبض"), QString::fromUtf8("إيداع"), QString::fromUtf8("سحب")
+    };
+    double totalDollar = 0, totalDinar = 0;
+    int row = 0;
+    while (q.next()) {
+        m_drTable->insertRow(row);
+        m_drTable->setItem(row,0,new QTableWidgetItem(q.value(0).toString()));
+        int t = q.value(1).toInt();
+        m_drTable->setItem(row,1,new QTableWidgetItem((t>=0&&t<typeNames.size())?typeNames[t]:""));
+        m_drTable->setItem(row,2,new QTableWidgetItem(q.value(2).toString()));
+        double d = q.value(3).toDouble(); double dn = q.value(4).toDouble();
+        m_drTable->setItem(row,3,new QTableWidgetItem(QString::number(d,'f',2)));
+        m_drTable->setItem(row,4,new QTableWidgetItem(QString::number(dn,'f',0)));
+        m_drTable->setItem(row,5,new QTableWidgetItem(q.value(5).toString()));
+        m_drTable->setItem(row,6,new QTableWidgetItem(q.value(6).toString()));
+        totalDollar += d; totalDinar += dn; ++row;
+    }
+    m_drTotalDollar->setText(QString::number(totalDollar,'f',2));
+    m_drTotalDinar->setText(QString::number(totalDinar,'f',0));
+    m_drNetDollar->setText(QString::number(totalDollar,'f',2));
+    m_drNetDinar->setText(QString::number(totalDinar,'f',0));
+}
+
+void CashBoxWindow::searchVaultBalance(const QString &currency)
+{
+    m_vbTable->setRowCount(0);
+    bool isDollar = (currency == "$");
+    QSqlQuery q;
+    q.prepare("SELECT doc_no, date, type, sub_account, amount_dollar, amount_dinar, notes "
+              "FROM cash_transactions WHERE date BETWEEN ? AND ? ORDER BY date");
+    q.addBindValue(m_vbFromDate->date().toString("yyyy-MM-dd"));
+    q.addBindValue(m_vbToDate->date().toString("yyyy-MM-dd"));
+    if (!q.exec()) return;
+    double balance = 0;
+    int row = 0;
+    while (q.next()) {
+        m_vbTable->insertRow(row);
+        double amt = isDollar ? q.value(4).toDouble() : q.value(5).toDouble();
+        int t = q.value(2).toInt();
+        double recv = (t==2||t==3) ? amt : 0.0;
+        double pay  = (t==0||t==1||t==4) ? amt : 0.0;
+        balance += recv - pay;
+        m_vbTable->setItem(row,0,new QTableWidgetItem(QString::number(balance,'f',isDollar?2:0)));
+        m_vbTable->setItem(row,1,new QTableWidgetItem(QString::number(recv,'f',isDollar?2:0)));
+        m_vbTable->setItem(row,2,new QTableWidgetItem(QString::number(pay,'f',isDollar?2:0)));
+        m_vbTable->setItem(row,3,new QTableWidgetItem(q.value(0).toString()));
+        m_vbTable->setItem(row,4,new QTableWidgetItem(q.value(1).toString()));
+        m_vbTable->setItem(row,5,new QTableWidgetItem(QString::number(t)));
+        m_vbTable->setItem(row,6,new QTableWidgetItem(q.value(3).toString()));
+        m_vbTable->setItem(row,7,new QTableWidgetItem(q.value(6).toString()));
+        ++row;
+    }
+}
+
+void CashBoxWindow::searchExchangeRates()
+{
+    m_erTable->setRowCount(0);
+    QSqlQuery q;
+    q.prepare("SELECT date, exchange_rate, notes FROM cash_transactions "
+              "WHERE date BETWEEN ? AND ? GROUP BY date, exchange_rate ORDER BY date DESC");
+    q.addBindValue(m_erFromDate->date().toString("yyyy-MM-dd"));
+    q.addBindValue(m_erToDate->date().toString("yyyy-MM-dd"));
+    if (!q.exec()) return;
+    int row = 0;
+    while (q.next()) {
+        m_erTable->insertRow(row);
+        m_erTable->setItem(row,0,new QTableWidgetItem(q.value(0).toString()));
+        m_erTable->setItem(row,1,new QTableWidgetItem(q.value(1).toString()));
+        m_erTable->setItem(row,2,new QTableWidgetItem(q.value(2).toString()));
+        ++row;
+    }
+}
+
+void CashBoxWindow::searchAccountsLedger()
+{
+    m_alReceiptsTable->setRowCount(0);
+    QSqlQuery q;
+    q.prepare("SELECT id, type, sub_account, amount_dollar, amount_dinar, date, notes "
+              "FROM cash_transactions WHERE type IN (2,3) ORDER BY date DESC");
+    if (!q.exec()) return;
+    double totD=0, totDn=0; int row=0;
+    while (q.next()) {
+        m_alReceiptsTable->insertRow(row);
+        for (int c=0;c<7;c++)
+            m_alReceiptsTable->setItem(row,c,new QTableWidgetItem(q.value(c).toString()));
+        totD+=q.value(3).toDouble(); totDn+=q.value(4).toDouble(); ++row;
+    }
+    m_alReceiptsTotal->setText(
+        QString::fromUtf8("الإجمالي: ")+QString::number(totD,'f',2)+
+        QString::fromUtf8(" $ | ")+QString::number(totDn,'f',0)+
+        QString::fromUtf8(" دينار"));
+}
+
+void CashBoxWindow::searchDiscounts()
+{
+    m_discTable->setRowCount(0);
+    QSqlQuery q;
+    q.prepare("SELECT amount_dollar, amount_dinar, sub_account, doc_no, date, notes "
+              "FROM cash_transactions WHERE type=1 AND date BETWEEN ? AND ? ORDER BY date DESC");
+    q.addBindValue(m_discFromDate->date().toString("yyyy-MM-dd"));
+    q.addBindValue(m_discToDate->date().toString("yyyy-MM-dd"));
+    if (!q.exec()) return;
+    int row=0;
+    while (q.next()) {
+        m_discTable->insertRow(row);
+        for (int c=0;c<6;c++)
+            m_discTable->setItem(row,c,new QTableWidgetItem(q.value(c).toString()));
+        ++row;
+    }
+}

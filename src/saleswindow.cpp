@@ -20,6 +20,7 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QTimer>
+#include <QInputDialog>
 
 
 /* ================================================================
@@ -412,17 +413,19 @@ void SalesWindow::setupUI()
     m_currentBalDollarLabel  = new QLabel("0");
     m_currentBalDinarLabel   = new QLabel("0");
 
+    m_receivedDollarEdit = new QLineEdit("0"); m_receivedDollarEdit->setFixedWidth(80);
+    m_receivedDinarEdit  = new QLineEdit("0"); m_receivedDinarEdit->setFixedWidth(80);
     sumRow({
         lbl(QString::fromUtf8("رصيد مادة")), new QLabel("0"),
         new QLabel(""),
-        lbl(QString::fromUtf8("الواصل $")),  new QLabel("0"),
-        lbl(QString::fromUtf8("الواصل د")),  new QLabel("0")
+        lbl(QString::fromUtf8("الواصل $")),  m_receivedDollarEdit,
+        lbl(QString::fromUtf8("الواصل د")),  m_receivedDinarEdit
     });
     sumRow({
         lbl(QString::fromUtf8("الخصم دينار")), new QLineEdit("0"),
         lbl(QString::fromUtf8("مايعادل $")),   new QLabel("0"),
         lbl(QString::fromUtf8("حمالية")),       new QLabel("0"),
-        lbl(QString::fromUtf8("استرجاع")),      new QPushButton(QString::fromUtf8("إضافة للانتظار"))
+        lbl(QString::fromUtf8("استرجاع")),      new QLabel("0")
     });
     sumRow({
         lbl(QString::fromUtf8("رصيد الزبون")), m_balDollarLabel,
@@ -527,6 +530,14 @@ void SalesWindow::setupUI()
     m_thermalBtn->setObjectName("thermalBtn");
     m_thermalBtn->setFixedHeight(36);
 
+    m_waitBtn = new QPushButton(QString::fromUtf8("انتظار"));
+    m_waitBtn->setFixedHeight(36);
+    m_waitBtn->setObjectName("waitBtn");
+
+    m_retrieveBtn = new QPushButton(QString::fromUtf8("استرجاع"));
+    m_retrieveBtn->setFixedHeight(36);
+    m_retrieveBtn->setObjectName("auxBtn");
+
     m_prepListBtn = new QPushButton(QString::fromUtf8("قائمة تجهيز"));
     m_prepListBtn->setFixedHeight(36);
     m_prepListBtn->setObjectName("auxBtn");
@@ -562,6 +573,8 @@ void SalesWindow::setupUI()
     QPushButton *sigBtn  = toolBtn("✋",  QString::fromUtf8("توقيع"));
 
     tbl->addWidget(m_saveBtn);
+    tbl->addWidget(m_waitBtn);
+    tbl->addWidget(m_retrieveBtn);
     tbl->addWidget(m_searchBtn);
     tbl->addWidget(m_deleteBtn);
     tbl->addWidget(m_printBtn);
@@ -597,6 +610,8 @@ void SalesWindow::setupUI()
     connect(m_customerStatBtn,&QPushButton::clicked, this, &SalesWindow::showCustomerStatement);
     connect(m_firstBtn,       &QPushButton::clicked, this, &SalesWindow::navigateFirst);
     connect(m_lastBtn,        &QPushButton::clicked, this, &SalesWindow::navigateLast);
+    connect(m_waitBtn,        &QPushButton::clicked, this, &SalesWindow::saveToWaiting);
+    connect(m_retrieveBtn,    &QPushButton::clicked, this, &SalesWindow::retrieveFromWaiting);
 
     connect(m_customerCombo,
             QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -609,9 +624,31 @@ void SalesWindow::setupUI()
 
     /* filter product list by name */
     connect(m_partNameEdit, &QLineEdit::textChanged, [this](const QString &txt) {
+        QString grp = m_groupCombo->currentText();
+        bool allGroups = (grp == QString::fromUtf8("كل الاصناف") || grp.isEmpty());
         for (int r = 0; r < m_productList->rowCount(); ++r) {
-            bool hide = !m_productList->item(r, 1)->text().contains(txt, Qt::CaseInsensitive);
-            m_productList->setRowHidden(r, hide);
+            auto *nm = m_productList->item(r, 1);
+            if (!nm) continue;
+            bool nameMatch = nm->text().contains(txt, Qt::CaseInsensitive);
+            QString itemGrp = nm->data(Qt::UserRole + 1).toString();
+            bool grpMatch = allGroups || (itemGrp == grp);
+            m_productList->setRowHidden(r, !(nameMatch && grpMatch));
+        }
+    });
+
+    /* filter product list by group */
+    connect(m_groupCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            [this](int) {
+        QString grp = m_groupCombo->currentText();
+        QString txt = m_partNameEdit->text();
+        bool allGroups = (grp == QString::fromUtf8("كل الاصناف") || grp.isEmpty());
+        for (int r = 0; r < m_productList->rowCount(); ++r) {
+            auto *nm = m_productList->item(r, 1);
+            if (!nm) continue;
+            bool nameMatch = nm->text().contains(txt, Qt::CaseInsensitive);
+            QString itemGrp = nm->data(Qt::UserRole + 1).toString();
+            bool grpMatch = allGroups || (itemGrp == grp);
+            m_productList->setRowHidden(r, !(nameMatch && grpMatch));
         }
     });
 
@@ -654,6 +691,7 @@ void SalesWindow::applyStyles()
         #pdfBtn       { background:#cc2200; color:white; font-weight:bold; border-radius:3px; padding:0 8px; }
         #thermalBtn   { background:#ff6666; color:white; font-weight:bold; border-radius:3px; padding:0 6px; }
         #auxBtn       { background:#c8d8f0; border:1px solid #88aacc; border-radius:3px; color:#003366; padding:0 6px; }
+        #waitBtn      { background:#ff9900; color:white; font-weight:bold; border-radius:3px; border:1px solid #cc7700; padding:0 6px; }
         #navLbl       { background:#FFD700; color:#003366; font-weight:bold; border:1px solid #aa8800; border-radius:2px; }
         #operLbl      { background:#cc88ff; color:#330033; font-weight:bold; padding:2px 8px; border-radius:3px; }
         #timeLbl      { background:#ffffc0; color:#003366; font-weight:bold; padding:2px 6px; border:1px solid #aaaa60; border-radius:2px; }
@@ -689,6 +727,12 @@ void SalesWindow::loadProducts()
     m_barcodeCombo->clear();
     m_productList->setRowCount(0);
 
+    // Reload groups
+    m_groupCombo->clear();
+    m_groupCombo->addItem(QString::fromUtf8("كل الاصناف"));
+    for (const QString &g : Database::getProductGroups())
+        m_groupCombo->addItem(g);
+
     QSqlQuery q = Database::getProducts();
     int row = 0;
     while (q.next()) {
@@ -700,7 +744,8 @@ void SalesWindow::loadProducts()
         chk->setCheckState(Qt::Unchecked);
         m_productList->setItem(row, 0, chk);
         QTableWidgetItem *nm = new QTableWidgetItem(q.value(2).toString());
-        nm->setData(Qt::UserRole, q.value(0));
+        nm->setData(Qt::UserRole, q.value(0));             // product id
+        nm->setData(Qt::UserRole + 1, q.value(3).toString()); // product_group
         m_productList->setItem(row, 1, nm);
         ++row;
     }
@@ -1010,4 +1055,77 @@ void SalesWindow::navigateLast()
     QSqlQuery q;
     q.exec("SELECT MAX(id) FROM sales_invoices");
     if (q.next() && !q.value(0).isNull()) loadInvoice(q.value(0).toInt());
+}
+
+void SalesWindow::saveToWaiting()
+{
+    if (m_itemsTable->rowCount() == 0) {
+        QMessageBox::information(this, "", QString::fromUtf8("لا توجد مواد في الفاتورة"));
+        return;
+    }
+    WaitingInvoice wi;
+    wi.customerId   = m_customerCombo->currentData().toInt();
+    wi.customerName = m_customerCombo->currentText();
+    wi.currency     = m_currencyCombo->currentText();
+    wi.paymentType  = m_paymentTypeCombo->currentText();
+    wi.notes        = m_notesEdit->text();
+    for (int r = 0; r < m_itemsTable->rowCount(); ++r) {
+        QStringList row;
+        for (int c = 0; c < m_itemsTable->columnCount(); ++c)
+            row << (m_itemsTable->item(r,c) ? m_itemsTable->item(r,c)->text() : "");
+        wi.items << row;
+    }
+    m_waitingList << wi;
+    clearForm();
+    QMessageBox::information(this, QString::fromUtf8("انتظار"),
+        QString::fromUtf8("تم حفظ الفاتورة في الانتظار. الفواتير المعلقة: ") +
+        QString::number(m_waitingList.size()));
+}
+
+void SalesWindow::retrieveFromWaiting()
+{
+    if (m_waitingList.isEmpty()) {
+        QMessageBox::information(this, "", QString::fromUtf8("لا توجد فواتير في الانتظار"));
+        return;
+    }
+    // Build selection list
+    QStringList choices;
+    for (int i = 0; i < m_waitingList.size(); ++i)
+        choices << QString::fromUtf8("الزبون: ") + m_waitingList[i].customerName +
+                   QString::fromUtf8(" | مواد: ") + QString::number(m_waitingList[i].items.size());
+
+    bool ok = false;
+    QString chosen = QInputDialog::getItem(this,
+        QString::fromUtf8("فواتير الانتظار"),
+        QString::fromUtf8("اختر فاتورة للاسترجاع:"),
+        choices, 0, false, &ok);
+    if (!ok) return;
+
+    int idx = choices.indexOf(chosen);
+    if (idx < 0 || idx >= m_waitingList.size()) return;
+
+    const WaitingInvoice &wi = m_waitingList[idx];
+    clearForm();
+
+    // Restore customer
+    for (int i = 0; i < m_customerCombo->count(); ++i) {
+        if (m_customerCombo->itemData(i).toInt() == wi.customerId) {
+            m_customerCombo->setCurrentIndex(i); break;
+        }
+    }
+    // Restore combos
+    m_currencyCombo->setCurrentText(wi.currency);
+    m_paymentTypeCombo->setCurrentText(wi.paymentType);
+    m_notesEdit->setText(wi.notes);
+
+    // Restore table rows
+    m_itemsTable->setRowCount(0);
+    for (const QStringList &row : wi.items) {
+        int r = m_itemsTable->rowCount();
+        m_itemsTable->insertRow(r);
+        for (int c = 0; c < row.size() && c < m_itemsTable->columnCount(); ++c)
+            m_itemsTable->setItem(r, c, new QTableWidgetItem(row[c]));
+    }
+    m_waitingList.removeAt(idx);
+    updateTotals();
 }
