@@ -34,11 +34,6 @@ void CashBoxWindow::setupUI()
     mainLayout->setContentsMargins(6, 6, 6, 6);
     mainLayout->setSpacing(6);
 
-    // ===== TITLE =====
-    QLabel *titleLabel = new QLabel(QString::fromUtf8("أدامة حركات الصندوق"));
-    titleLabel->setObjectName("titleLabel");
-    titleLabel->setFont(QFont("Tahoma", 16, QFont::Bold));
-    titleLabel->setAlignment(Qt::AlignCenter);
     // ===== HEADER GRID =====
     // In RTL mode, QGridLayout column 0 is the VISUAL RIGHT edge.
     // So: label at col N, widget at col N+1 (label RIGHT of widget).
