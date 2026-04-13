@@ -591,44 +591,77 @@ QString PrintManager::generatePurchaseInvoiceHtml(int invoiceId, const QString &
                 "LEFT JOIN products p ON pit.product_id=p.id WHERE pit.invoice_id=?");
     qit.addBindValue(invoiceId); qit.exec();
 
+    QString invCurrency = qi.value(5).toString();
+    double  rate        = qi.value(6).toDouble();
+    bool    isDinar     = (invCurrency == QString::fromUtf8("دينار"));
+    QString sym         = isDinar ? QString::fromUtf8("د") : "$";
+
     QString h = arabicHtmlHeader();
     h += "<div class='co'>" + companyName + "</div>";
-    h += "<div class='title'>فاتورة شراء رقم: " + QString::number(invoiceId) + "</div>";
+    h += "<div class='title'>" + QString::fromUtf8("فاتورة شراء رقم: ")
+       + QString::number(invoiceId) + "</div>";
 
     h += "<table class='meta' dir='rtl'>"
-         "<tr><td><span class='lbl'>المجهز:</span> "    + qi.value(2).toString() + "</td>"
-         "    <td><span class='lbl'>التاريخ:</span> "   + qi.value(1).toString() + "</td></tr>"
-         "<tr><td><span class='lbl'>نوع الدفع:</span> " + qi.value(4).toString() + "</td>"
-         "    <td><span class='lbl'>نوع الشراء:</span> "+ qi.value(3).toString() + "</td></tr>"
+         "<tr>"
+         "<td><span class='lbl'>" + QString::fromUtf8("المجهز:") + "</span> "   + qi.value(2).toString() + "</td>"
+         "<td><span class='lbl'>" + QString::fromUtf8("التاريخ:") + "</span> "  + qi.value(1).toString() + "</td>"
+         "</tr><tr>"
+         "<td><span class='lbl'>" + QString::fromUtf8("نوع الدفع:") + "</span> "  + qi.value(4).toString() + "</td>"
+         "<td><span class='lbl'>" + QString::fromUtf8("نوع الشراء:") + "</span> " + qi.value(3).toString() + "</td>"
+         "</tr><tr>"
+         "<td><span class='lbl'>" + QString::fromUtf8("العملة:") + "</span> "    + invCurrency + "</td>"
+         "<td><span class='lbl'>" + QString::fromUtf8("رقم القائمة:") + "</span> " + QString::number(invoiceId) + "</td>"
+         "</tr>"
          "</table>";
 
+    // Items table — match sales invoice style
     h += "<table class='data' dir='rtl'>"
          "<tr>"
          "<th width='5%'>#</th>"
-         "<th width='37%'>اسم المادة</th>"
-         "<th width='12%'>الكمية</th>"
-         "<th width='15%'>كلفة $</th>"
-         "<th width='16%'>جملة $</th>"
-         "<th width='15%'>مفرد $</th>"
+         "<th width='40%'>" + QString::fromUtf8("اسم المادة")   + "</th>"
+         "<th width='13%'>" + QString::fromUtf8("الكمية")       + "</th>"
+         "<th width='21%'>" + QString::fromUtf8("الكلفة (") + sym + ")</th>"
+         "<th width='21%'>" + QString::fromUtf8("المبلغ (")  + sym + ")</th>"
          "</tr>";
 
-    int row=1; double totalCost=0;
+    int rowNo = 1;
+    double grandTotal = 0;
     while (qit.next()) {
-        double qty=qit.value(1).toDouble(), cost=qit.value(2).toDouble();
-        totalCost += qty*cost;
+        double qty  = qit.value(1).toDouble();
+        double cost = qit.value(2).toDouble();
+        double lineAmt = isDinar ? (qty * cost * rate) : (qty * cost);
+        grandTotal += lineAmt;
+        QString fmtCost = isDinar
+            ? QString::number(cost * rate, 'f', 0)
+            : QString::number(cost, 'f', 2);
+        QString fmtAmt = isDinar
+            ? QString::number(lineAmt, 'f', 0)
+            : QString::number(lineAmt, 'f', 2);
         h += "<tr>"
-             "<td>" + QString::number(row++) + "</td>"
-             "<td>" + qit.value(0).toString() + "</td>"
-             "<td>" + QString::number(qty) + "</td>"
-             "<td>" + QString::number(cost,'f',3) + "</td>"
-             "<td>" + QString::number(qit.value(3).toDouble(),'f',3) + "</td>"
-             "<td>" + QString::number(qit.value(4).toDouble(),'f',3) + "</td>"
+             "<td>" + QString::number(rowNo++) + "</td>"
+             "<td>" + qit.value(0).toString()  + "</td>"
+             "<td>" + QString::number(qty)      + "</td>"
+             "<td>" + fmtCost + "</td>"
+             "<td>" + fmtAmt  + "</td>"
              "</tr>";
     }
+
+    QString fmtGrand = isDinar
+        ? QString::number(grandTotal, 'f', 0)
+        : QString::number(grandTotal, 'f', 2);
+
     h += "<tr class='tot'>"
-         "<td colspan='4'>إجمالي الكلفة</td>"
-         "<td colspan='2'>" + QString::number(totalCost,'f',2) + " $</td>"
-         "</tr></table></body></html>";
+         "<td colspan='4'>" + QString::fromUtf8("الإجمالي") + "</td>"
+         "<td>" + fmtGrand + " " + sym + "</td>"
+         "</tr></table>";
+
+    if (!isDinar)
+        h += "<p>" + QString::fromUtf8("سعر الصرف: ")
+           + QString::number(rate, 'f', 0)
+           + QString::fromUtf8(" دينار / دولار") + "</p>";
+
+    h += "<div class='sig'>" + QString::fromUtf8("التوقيع: _______________") + "</div>";
+    h += "</body></html>";
     return h;
 }
 
