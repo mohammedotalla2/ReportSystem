@@ -33,7 +33,6 @@ private:
     QComboBox  *m_supplierCombo;
     QDateEdit  *m_dateEdit;
     QComboBox  *m_purchaseTypeCombo, *m_payTypeCombo, *m_currencyCombo;
-    QComboBox  *m_payMechCombo;
     QLineEdit  *m_exchangeRateEdit, *m_invoiceRefEdit, *m_notesEdit;
 
     QComboBox  *m_barcodeCombo, *m_productCombo;
@@ -51,6 +50,14 @@ private:
     QLabel     *m_supplierBalLabel;
     QLabel     *m_supplierBalDinarLabel;
 
+    // Currency-symbol labels (updated when currency combo changes)
+    QLabel     *m_costCurrLbl;      // "كلفة $" / "كلفة دينار"
+    QLabel     *m_wsCurrLbl;        // "جملة $" / "جملة د"
+    QLabel     *m_retCurrLbl;       // "مفرد $" / "مفرد د"
+    QLabel     *m_lineTotCurrLbl;   // "$" / "د" before line total edit
+    QLabel     *m_grandCurrLbl;     // "$" / "د" before grand total
+    QLabel     *m_paidCurrLbl;      // "مدفوع $" / "مدفوع دينار"
+
     QPushButton *m_saveBtn, *m_deleteBtn, *m_searchBtn;
     QPushButton *m_printBtn, *m_pdfBtn;
     QPushButton *m_firstBtn, *m_prevBtn, *m_nextBtn, *m_lastBtn;
@@ -62,7 +69,7 @@ private:
     QSpinBox    *m_organiserSpin;
     QLabel      *m_timeLabel;
 
-    int m_currentInvoiceId;
+    int  m_currentInvoiceId;
     bool m_blockBarcodeSignal;
     PrintManager *m_printer;
 };

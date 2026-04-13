@@ -106,13 +106,6 @@ void PurchaseWindow::setupUI()
     m_exchangeRateEdit->setObjectName("yellowField");
     m_exchangeRateEdit->setFixedWidth(80);
 
-    // آلية الصرف: نقدي / آجل
-    m_payMechCombo = new QComboBox;
-    m_payMechCombo->addItems({
-        QString::fromUtf8("نقدي"),
-        QString::fromUtf8("آجل")
-    });
-
     // Row 1: same rule – field at higher col, label to its right (lower col)
     headerGrid->addWidget(m_currencyCombo,          1, 12);
     headerGrid->addWidget(lbl(QString::fromUtf8("العملة")),       1, 11);
@@ -120,8 +113,6 @@ void PurchaseWindow::setupUI()
     headerGrid->addWidget(lbl(QString::fromUtf8("سند الصرف")),   1,  8);
     headerGrid->addWidget(m_exchangeRateEdit,       1,  6);
     headerGrid->addWidget(lbl(QString::fromUtf8("سعر صرف $")),   1,  5);
-    headerGrid->addWidget(m_payMechCombo,           1,  3);
-    headerGrid->addWidget(lbl(QString::fromUtf8("آلية الصرف")),  1,  2);
 
     // ── Row 2: Notes ──
     m_notesEdit = new QLineEdit;
@@ -185,18 +176,24 @@ void PurchaseWindow::setupUI()
     QPushButton *delBtn = new QPushButton(QString::fromUtf8("✖"));
     delBtn->setFixedSize(36, 30); delBtn->setObjectName("delBtn");
 
+    // Currency-symbol labels stored as members so onCurrencyChanged can update them
+    m_costCurrLbl     = new QLabel(QString::fromUtf8("كلفة $"));
+    m_wsCurrLbl       = new QLabel(QString::fromUtf8("جملة $"));
+    m_retCurrLbl      = new QLabel(QString::fromUtf8("مفرد $"));
+    m_lineTotCurrLbl  = new QLabel("$");
+
     // Add in order: rightmost first, leftmost last (RTL HBox)
     itemRow->addWidget(m_barcodeCombo);
     itemRow->addWidget(m_productCombo);
     itemRow->addWidget(lbl(QString::fromUtf8("الكمية")));
     itemRow->addWidget(m_qtyEdit);
-    itemRow->addWidget(lbl(QString::fromUtf8("كلفة $")));
+    itemRow->addWidget(m_costCurrLbl);
     itemRow->addWidget(m_costPriceEdit);
-    itemRow->addWidget(lbl(QString::fromUtf8("جملة $")));
+    itemRow->addWidget(m_wsCurrLbl);
     itemRow->addWidget(m_wholesaleDollarEdit);
-    itemRow->addWidget(lbl(QString::fromUtf8("مفرد $")));
+    itemRow->addWidget(m_retCurrLbl);
     itemRow->addWidget(m_retailDollarEdit);
-    itemRow->addWidget(lbl("$"));
+    itemRow->addWidget(m_lineTotCurrLbl);
     itemRow->addWidget(m_totalDollarEdit);
     itemRow->addWidget(lbl(QString::fromUtf8("دينار")));
     itemRow->addWidget(m_totalDinarEdit);
@@ -244,11 +241,10 @@ void PurchaseWindow::setupUI()
     m_lastPurchasePriceLabel = new QLabel("0");
 
     m_paidDollarEdit = new QLineEdit("0");
-    m_paidDollarEdit->setFixedWidth(80);
+    m_paidDollarEdit->setFixedWidth(90);
     m_paidDollarEdit->setObjectName("greenField");
-    m_paidDinarEdit  = new QLineEdit("0");
-    m_paidDinarEdit->setFixedWidth(90);
-    m_paidDinarEdit->setObjectName("greenField");
+    // m_paidDinarEdit kept for accounting but not shown separately (label changes with currency)
+    m_paidDinarEdit = new QLineEdit("0");   // hidden accounting helper
 
     m_grandTotalDollarEdit = new QLineEdit("0");
     m_grandTotalDollarEdit->setReadOnly(true);
@@ -263,19 +259,21 @@ void PurchaseWindow::setupUI()
     m_discountEdit->setObjectName("greenField");
     m_discountEdit->setFixedWidth(80);
 
+    // Currency labels stored as members so onCurrencyChanged can update them
+    m_paidCurrLbl  = new QLabel(QString::fromUtf8("مدفوع $"));
+    m_grandCurrLbl = new QLabel("$");
+
     // Right side: supplier balance
     summRow->addWidget(m_supplierBalLabel);
     summRow->addWidget(lbl(QString::fromUtf8("د:")));
     summRow->addWidget(m_supplierBalDinarLabel);
     summRow->addStretch();
-    // Payment fields (with label to the right of field in RTL HBox: add label first)
-    summRow->addWidget(lbl(QString::fromUtf8("مدفوع $")));
+    // Payment field (label before field = label on right in RTL HBox)
+    summRow->addWidget(m_paidCurrLbl);
     summRow->addWidget(m_paidDollarEdit);
-    summRow->addWidget(lbl(QString::fromUtf8("مدفوع دينار")));
-    summRow->addWidget(m_paidDinarEdit);
     summRow->addStretch();
-    // Totals
-    summRow->addWidget(lbl("$"));
+    // Grand total
+    summRow->addWidget(m_grandCurrLbl);
     summRow->addWidget(m_grandTotalDollarEdit);
     summRow->addWidget(lbl(QString::fromUtf8("دينار")));
     summRow->addWidget(m_grandTotalDinarEdit);
@@ -519,12 +517,14 @@ void PurchaseWindow::onBarcodeSelected(int index)
 
 void PurchaseWindow::calculateTotals()
 {
-    double qty  = m_qtyEdit->text().toDouble();
-    double cost = m_costPriceEdit->text().toDouble();
-    double rate = m_exchangeRateEdit->text().toDouble();
+    bool isDinar = (m_currencyCombo->currentText() == QString::fromUtf8("دينار"));
+    double qty   = m_qtyEdit->text().toDouble();
+    double cost  = m_costPriceEdit->text().toDouble();
+    double rate  = m_exchangeRateEdit->text().toDouble();
     if (rate <= 0) rate = Database::getExchangeRate();
-    m_totalDollarEdit->setText(QString::number(qty * cost, 'f', 2));
-    m_totalDinarEdit->setText(QString::number(qty * cost * rate, 'f', 0));
+    double lineAmt = qty * cost;
+    m_totalDollarEdit->setText(QString::number(lineAmt, 'f', isDinar ? 0 : 2));
+    m_totalDinarEdit->setText(QString::number(lineAmt * (isDinar ? 1.0 : rate), 'f', 0));
 }
 
 void PurchaseWindow::addItem()
@@ -604,18 +604,21 @@ void PurchaseWindow::saveInvoice()
 
     double rate        = m_exchangeRateEdit->text().toDouble();
     if (rate <= 0) rate = Database::getExchangeRate();
-    double totalDollar = m_grandTotalDollarEdit->text().toDouble();
-    double totalDinar  = m_grandTotalDinarEdit->text().toDouble();
+    bool   isDinar     = (m_currencyCombo->currentText() == QString::fromUtf8("دينار"));
+    double grandAmt    = m_grandTotalDollarEdit->text().toDouble(); // in active currency
+    double totalDollar = isDinar ? (grandAmt / rate) : grandAmt;
+    double totalDinar  = isDinar ? grandAmt : (grandAmt * rate);
     double discount    = m_discountEdit->text().toDouble();
-    double paidDollar  = m_paidDollarEdit->text().toDouble();
-    double paidDinar   = m_paidDinarEdit->text().toDouble();
-    QString payMech    = m_payMechCombo->currentText();
+    double paidAmt     = m_paidDollarEdit->text().toDouble();       // in active currency
+    double paidDollar  = isDinar ? (paidAmt / rate) : paidAmt;
+    double paidDinar   = isDinar ? paidAmt : (paidAmt * rate);
+    QString payType    = m_payTypeCombo->currentText();             // نقدي / آجل
     QString currency   = m_currencyCombo->currentText();
 
     int invId = Database::createPurchaseInvoice(
         suppId, m_dateEdit->date(),
         m_purchaseTypeCombo->currentText(),
-        payMech,
+        payType,
         currency,
         rate, m_notesEdit->text(), 1);
 
@@ -635,43 +638,33 @@ void PurchaseWindow::saveInvoice()
 
     // ── Accounting logic ──
     QSqlQuery upd;
-    if (payMech == QString::fromUtf8("آجل")) {
-        // Deferred: full invoice amount becomes a debit on the supplier's account
-        // (we owe them) – increase supplier balance
-        if (currency == "$") {
-            double net = totalDollar - (discount / rate);
-            upd.prepare("UPDATE customers SET balance_dollar = balance_dollar + ? WHERE id=?");
-            upd.addBindValue(net > 0 ? net : 0.0);
-        } else {
-            double net = totalDinar - discount;
-            upd.prepare("UPDATE customers SET balance_dinar = balance_dinar + ? WHERE id=?");
-            upd.addBindValue(net > 0 ? net : 0.0);
-        }
+    if (payType == QString::fromUtf8("آجل")) {
+        // Deferred: full net amount becomes a debit (we owe the supplier)
+        double netD  = totalDollar - (isDinar ? 0 : discount / rate);
+        double netDn = totalDinar  - (isDinar ? discount : 0);
+        upd.prepare("UPDATE customers SET balance_dollar = balance_dollar + ?,"
+                    " balance_dinar = balance_dinar + ? WHERE id=?");
+        upd.addBindValue(netD  > 0 ? netD  : 0.0);
+        upd.addBindValue(netDn > 0 ? netDn : 0.0);
         upd.addBindValue(suppId);
         upd.exec();
     } else {
-        // نقدي: record any partial shortfall as balance
-        if (currency == "$") {
-            double net       = totalDollar - (discount / rate);
-            double shortfall = net - paidDollar;
-            if (shortfall > 0.001) {
-                upd.prepare("UPDATE customers SET balance_dollar = balance_dollar + ? WHERE id=?");
-                upd.addBindValue(shortfall);
-                upd.addBindValue(suppId);
-                upd.exec();
-            }
-        } else {
-            double net       = totalDinar - discount;
-            double shortfall = net - paidDinar;
-            if (shortfall > 0.001) {
-                upd.prepare("UPDATE customers SET balance_dinar = balance_dinar + ? WHERE id=?");
-                upd.addBindValue(shortfall);
-                upd.addBindValue(suppId);
-                upd.exec();
-            }
+        // نقدي: add unpaid shortfall to supplier balance
+        double netD      = totalDollar - (isDinar ? 0 : discount / rate);
+        double netDn     = totalDinar  - (isDinar ? discount : 0);
+        double shortD    = netD  - paidDollar;
+        double shortDn   = netDn - paidDinar;
+        if (shortD > 0.001 || shortDn > 0.001) {
+            upd.prepare("UPDATE customers SET balance_dollar = balance_dollar + ?,"
+                        " balance_dinar = balance_dinar + ? WHERE id=?");
+            upd.addBindValue(shortD  > 0 ? shortD  : 0.0);
+            upd.addBindValue(shortDn > 0 ? shortDn : 0.0);
+            upd.addBindValue(suppId);
+            upd.exec();
         }
     }
 
+    m_currentInvoiceId = invId;
     m_invoiceNoSpin->setValue(invId);
     // Refresh supplier balance display
     onSupplierChanged(m_supplierCombo->currentIndex());
@@ -699,32 +692,23 @@ void PurchaseWindow::clearForm()
 
 void PurchaseWindow::printInvoice()
 {
-    QString html = PrintManager::arabicHtmlHeader();
-    html += QString::fromUtf8("<div class='company'>%1</div>").arg(Database::getCompanyName());
-    html += QString::fromUtf8("<h2>فاتورة شراء رقم: %1</h2>").arg(m_invoiceNoSpin->value());
-    html += QString::fromUtf8("<p>المجهز: %1 | التاريخ: %2</p>")
-            .arg(m_supplierCombo->currentText(),
-                 m_dateEdit->date().toString("dd/MM/yyyy"));
-    html += QString::fromUtf8("<table><tr><th>اسم المادة</th><th>الكمية</th><th>الكلفة $</th><th>المجموع $</th></tr>");
-    for (int r = 0; r < m_itemsTable->rowCount(); r++) {
-        html += QString("<tr><td>%1</td><td>%2</td><td>%3</td><td>%4</td></tr>")
-                .arg(m_itemsTable->item(r, 3)->text())
-                .arg(m_itemsTable->item(r, 4)->text())
-                .arg(m_itemsTable->item(r, 5)->text())
-                .arg(m_itemsTable->item(r, 6)->text());
+    if (m_currentInvoiceId < 0) {
+        QMessageBox::warning(this, "", QString::fromUtf8("احفظ الفاتورة أولاً"));
+        return;
     }
-    html += QString::fromUtf8("<tr class='total'><td colspan='3'>الإجمالي</td><td>%1 $</td></tr>")
-            .arg(m_grandTotalDollarEdit->text());
-    html += "</table></body></html>";
-    m_printer->printDocument(this, html, QString::fromUtf8("فاتورة مشتريات"));
+    QString html = PrintManager::generatePurchaseInvoiceHtml(
+        m_currentInvoiceId, Database::getCompanyName());
+    m_printer->printPreview(this, html, QString::fromUtf8("فاتورة مشتريات"));
 }
 
 void PurchaseWindow::exportPDF()
 {
-    QString html = PrintManager::arabicHtmlHeader();
-    html += QString::fromUtf8("<div class='company'>%1</div>").arg(Database::getCompanyName());
-    html += QString::fromUtf8("<h2>فاتورة شراء رقم: %1</h2>").arg(m_invoiceNoSpin->value());
-    html += "</body></html>";
+    if (m_currentInvoiceId < 0) {
+        QMessageBox::warning(this, "", QString::fromUtf8("احفظ الفاتورة أولاً"));
+        return;
+    }
+    QString html = PrintManager::generatePurchaseInvoiceHtml(
+        m_currentInvoiceId, Database::getCompanyName());
     m_printer->exportToPDF(this, html, QString::fromUtf8("فاتورة_مشتريات"));
 }
 
@@ -757,8 +741,26 @@ void PurchaseWindow::onSupplierChanged(int index)
 
 void PurchaseWindow::onCurrencyChanged()
 {
-    bool toDinar = (m_currencyCombo->currentText() == QString::fromUtf8("دينار"));
-    double rate  = m_exchangeRateEdit->text().toDouble();
+    bool isDinar = (m_currencyCombo->currentText() == QString::fromUtf8("دينار"));
+    QString sym  = isDinar ? QString::fromUtf8("دينار") : "$";
+    QString syms = isDinar ? QString::fromUtf8("د")     : "$";
+
+    // ── Update all currency-symbol labels ──
+    m_costCurrLbl->setText(QString::fromUtf8("كلفة ") + syms);
+    m_wsCurrLbl->setText(QString::fromUtf8("جملة ") + syms);
+    m_retCurrLbl->setText(QString::fromUtf8("مفرد ") + syms);
+    m_lineTotCurrLbl->setText(syms);
+    m_grandCurrLbl->setText(syms);
+    m_paidCurrLbl->setText(QString::fromUtf8("مدفوع ") + sym);
+
+    // ── Update items table column headers ──
+    m_itemsTable->setHorizontalHeaderItem(5, new QTableWidgetItem(
+        QString::fromUtf8("الكلفة ") + syms));
+    m_itemsTable->setHorizontalHeaderItem(6, new QTableWidgetItem(
+        QString::fromUtf8("المبلغ ") + syms));
+
+    // ── Recalculate existing rows ──
+    double rate = m_exchangeRateEdit->text().toDouble();
     if (rate <= 0) rate = Database::getExchangeRate();
 
     for (int r = 0; r < m_itemsTable->rowCount(); r++) {
@@ -768,15 +770,20 @@ void PurchaseWindow::onCurrencyChanged()
         if (!costItem || !amtItem || !qtyItem) continue;
         double cost = costItem->text().toDouble();
         double qty  = qtyItem->text().toDouble();
-        double newCost = toDinar ? (cost * rate) : (cost / rate);
-        costItem->setText(QString::number(newCost, 'f', 2));
-        amtItem->setText(QString::number(newCost * qty, 'f', toDinar ? 0 : 2));
+        double newCost = isDinar ? (cost * rate) : (cost / rate);
+        costItem->setText(QString::number(newCost, 'f', isDinar ? 0 : 2));
+        amtItem->setText(QString::number(newCost * qty, 'f', isDinar ? 0 : 2));
     }
 
+    // ── Recalc grand total ──
     double grand = 0;
     for (int r = 0; r < m_itemsTable->rowCount(); r++)
         if (m_itemsTable->item(r, 6))
             grand += m_itemsTable->item(r, 6)->text().toDouble();
-    m_grandTotalDollarEdit->setText(QString::number(grand, 'f', 2));
-    m_grandTotalDinarEdit->setText(QString::number(grand * (toDinar ? 1.0 : rate), 'f', 0));
+    QString fmt = isDinar ? QString::number(grand, 'f', 0) : QString::number(grand, 'f', 2);
+    m_grandTotalDollarEdit->setText(fmt);
+    m_grandTotalDinarEdit->setText(QString::number(grand * (isDinar ? 1.0 : rate), 'f', 0));
+
+    // ── Recalc current line entry ──
+    calculateTotals();
 }
