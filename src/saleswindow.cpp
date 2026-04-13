@@ -1287,11 +1287,20 @@ void SalesWindow::saveInvoice()
     }
 
     for (int r = 0; r < m_itemsTable->rowCount(); ++r) {
-        int    pid   = m_itemsTable->item(r, 9)->text().toInt();
-        double qty   = m_itemsTable->item(r, 4)->text().toDouble();
-        double price = m_itemsTable->item(r, 5)->text().toDouble();
-        double tot   = m_itemsTable->item(r, 6)->text().toDouble();
-        Database::addSalesItem(id, pid, qty, price, 0, tot, 0, "");
+        int    pid     = m_itemsTable->item(r, 9)->text().toInt();
+        double qty     = m_itemsTable->item(r, 4)->text().toDouble();
+        double price   = m_itemsTable->item(r, 5)->text().toDouble();
+        double tot     = m_itemsTable->item(r, 6)->text().toDouble();
+        QString rowCur = m_itemsTable->item(r, 8) ? m_itemsTable->item(r, 8)->text()
+                                                  : m_currencyCombo->currentText();
+        QString itemNotes = m_itemsTable->item(r, 7) ? m_itemsTable->item(r, 7)->text() : "";
+        bool dollar = (rowCur == "$");
+        Database::addSalesItem(id, pid, qty,
+            dollar ? price : 0.0,   // unit_price_dollar
+            dollar ? 0.0  : price,  // unit_price_dinar
+            dollar ? tot  : 0.0,    // total_dollar
+            dollar ? 0.0  : tot,    // total_dinar
+            itemNotes);
     }
 
     // ── Accounting: cash box + customer balance ──────────────────
