@@ -53,6 +53,8 @@ private:
     QLineEdit      *m_companyNameEdit;
     QDoubleSpinBox *m_exchangeRateSpin;
     QLineEdit      *m_cashboxDollarEdit, *m_cashboxDinarEdit;
+    // Live treasury balance display
+    QLabel         *m_liveBalDollarLabel, *m_liveBalDinarLabel;
 
     // Customers tab
     QTableWidget   *m_customersTable;

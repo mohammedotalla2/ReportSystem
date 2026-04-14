@@ -249,19 +249,101 @@ auto makeBigBtn = [](const QString &text, const QString &objName) {
     QSqlQuery pq = Database::getProducts();
     while (pq.next()) m_barcodeCombo->addItem(pq.value(1).toString(), pq.value(0));
 
-    connect(m_salesBtn, &QPushButton::clicked, this, &MainWindow::openSales);
-    connect(purchaseBtn, &QPushButton::clicked, this, &MainWindow::openPurchases);
-    connect(m_cashBoxBtn, &QPushButton::clicked, this, &MainWindow::openCashBox);
-    connect(m_reportsBtn, &QPushButton::clicked, this, &MainWindow::openReports);
-    connect(m_settingsBtn, &QPushButton::clicked, this, &MainWindow::openSystemSettings);
-    connect(m_salesDetailsBtn, &QPushButton::clicked, this, &MainWindow::showTodaySalesDetails);
-    connect(m_barcodeCombo->lineEdit(), &QLineEdit::returnPressed, this, &MainWindow::onBarcodeEntered);
+    // Load productSearchCombo with product names (barcodeCombo already has barcodes)
+    QSqlQuery psq = Database::getProducts();
+    while (psq.next())
+        m_productSearchCombo->addItem(psq.value(2).toString(), psq.value(0));
 
-    connect(m_dailyReportBtn, &QPushButton::clicked, this, &MainWindow::openDailyReport);
-    connect(m_customerStatementBtn, &QPushButton::clicked, this, &MainWindow::openCustomerStatement);
-    connect(m_customerBalancesBtn, &QPushButton::clicked, this, &MainWindow::openCustomerBalances);
-    connect(m_inventoryBtn, &QPushButton::clicked, this, &MainWindow::openInventoryReport);
-    connect(m_closeBtn, &QPushButton::clicked, qApp, &QApplication::quit);
+    connect(m_salesBtn,       &QPushButton::clicked, this, &MainWindow::openSales);
+    connect(purchaseBtn,      &QPushButton::clicked, this, &MainWindow::openPurchases);
+    connect(m_cashBoxBtn,     &QPushButton::clicked, this, &MainWindow::openCashBox);
+    connect(m_settingsBtn,    &QPushButton::clicked, this, &MainWindow::openSystemSettings);
+    connect(m_salesDetailsBtn,&QPushButton::clicked, this, &MainWindow::showTodaySalesDetails);
+    connect(m_closeBtn,       &QPushButton::clicked, qApp, &QApplication::quit);
+
+    // Barcode combo: search on Enter key OR when a product is selected from dropdown
+    connect(m_barcodeCombo->lineEdit(), &QLineEdit::returnPressed,
+            this, &MainWindow::onBarcodeEntered);
+    connect(m_barcodeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) {
+        if (idx < 0) return;
+        int pid = m_barcodeCombo->itemData(idx).toInt();
+        if (pid <= 0) return;
+        QSqlQuery q;
+        q.prepare("SELECT name, retail_dinar, retail_dollar, cost_price, stock_qty "
+                  "FROM products WHERE id=?");
+        q.addBindValue(pid); q.exec();
+        if (q.next()) {
+            m_productNameEdit->setText(q.value(0).toString());
+            m_priceDinarEdit->setText(q.value(1).toString());
+            m_priceUsdEdit->setText(q.value(2).toString());
+            m_costEdit->setText(q.value(3).toString());
+            m_qtyEdit->setText(q.value(4).toString());
+        }
+    });
+
+    // Product name combo: selecting an item fills all product detail fields
+    connect(m_productSearchCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) {
+        if (idx < 0) return;
+        int pid = m_productSearchCombo->itemData(idx).toInt();
+        if (pid <= 0) return;
+        QSqlQuery q;
+        q.prepare("SELECT name, retail_dinar, retail_dollar, cost_price, stock_qty, barcode "
+                  "FROM products WHERE id=?");
+        q.addBindValue(pid); q.exec();
+        if (q.next()) {
+            m_productNameEdit->setText(q.value(0).toString());
+            m_priceDinarEdit->setText(q.value(1).toString());
+            m_priceUsdEdit->setText(q.value(2).toString());
+            m_costEdit->setText(q.value(3).toString());
+            m_qtyEdit->setText(q.value(4).toString());
+            m_barcodeCombo->setCurrentText(q.value(5).toString());
+        }
+    });
+
+    // Customer combo: selecting a customer fills balance fields
+    connect(m_customerCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) {
+        if (idx < 0) return;
+        int cid = m_customerCombo->itemData(idx).toInt();
+        if (cid <= 0) {
+            m_balDollarEdit->clear();
+            m_balDinarEdit->clear();
+            return;
+        }
+        QSqlQuery q;
+        q.prepare("SELECT balance_dollar, balance_dinar FROM customers WHERE id=?");
+        q.addBindValue(cid); q.exec();
+        if (q.next()) {
+            m_balDollarEdit->setText(QString::number(q.value(0).toDouble(), 'f', 2));
+            m_balDinarEdit->setText(QString::number(q.value(1).toDouble(), 'f', 0));
+        }
+    });
+    // Also trigger on free-text edit (user types customer name)
+    connect(m_customerCombo->lineEdit(), &QLineEdit::textEdited,
+            this, [this](const QString &text) {
+        if (text.trimmed().isEmpty()) {
+            m_balDollarEdit->clear();
+            m_balDinarEdit->clear();
+            return;
+        }
+        int idx = m_customerCombo->findText(text, Qt::MatchContains);
+        if (idx >= 0 && m_customerCombo->currentIndex() != idx)
+            m_customerCombo->setCurrentIndex(idx);
+    });
+
+    // Buttons under construction — show notice instead of opening the window
+    auto uc = [this]() {
+        QMessageBox::information(this,
+            QString::fromUtf8("تنبيه"),
+            QString::fromUtf8("هذا الحقل لا يزال تحت الإنشاء"));
+    };
+    connect(m_reportsBtn,           &QPushButton::clicked, this, uc);
+    connect(m_dailyReportBtn,       &QPushButton::clicked, this, uc);
+    connect(m_customerStatementBtn, &QPushButton::clicked, this, uc);
+    connect(m_customerBalancesBtn,  &QPushButton::clicked, this, uc);
+    connect(m_inventoryBtn,         &QPushButton::clicked, this, uc);
 }
 
 void MainWindow::applyStyles()

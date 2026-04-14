@@ -21,6 +21,7 @@ PurchaseWindow::PurchaseWindow(QWidget *parent)
     m_printer = new PrintManager(this);
     setupUI(); applyStyles();
     loadSuppliers(); loadProducts(); clearForm();
+    onCurrencyChanged();   // initialise all currency-symbol labels for default (دينار)
 }
 
 void PurchaseWindow::setupUI()
@@ -96,7 +97,7 @@ void PurchaseWindow::setupUI()
 
     // ── Row 1 ──
     m_currencyCombo = new QComboBox;
-    m_currencyCombo->addItems({"$", QString::fromUtf8("دينار")});
+    m_currencyCombo->addItems({QString::fromUtf8("دينار"), "$"});
     m_currencyCombo->setFixedWidth(70);
 
     m_invoiceRefEdit = new QLineEdit;
@@ -370,6 +371,24 @@ void PurchaseWindow::setupUI()
 
     mainLayout->addWidget(toolbar);
 
+    // ── Smart search: case-insensitive contains-match on productCombo ──
+    if (m_productCombo->completer()) {
+        m_productCombo->completer()->setCaseSensitivity(Qt::CaseInsensitive);
+        m_productCombo->completer()->setFilterMode(Qt::MatchContains);
+    }
+    connect(m_productCombo->lineEdit(), &QLineEdit::returnPressed, [this]() {
+        QString text = m_productCombo->currentText().trimmed();
+        if (text.isEmpty()) return;
+        int idx = m_productCombo->findText(text, Qt::MatchContains | Qt::MatchCaseSensitive);
+        if (idx < 0) idx = m_productCombo->findText(text, Qt::MatchContains);
+        if (idx >= 0) {
+            if (m_productCombo->currentIndex() == idx)
+                onProductSelected(idx);   // force refresh even if index unchanged
+            else
+                m_productCombo->setCurrentIndex(idx);
+        }
+    });
+
     // ── Connections ──
     connect(addBtn,  &QPushButton::clicked, this, &PurchaseWindow::addItem);
     connect(delBtn,  &QPushButton::clicked, this, &PurchaseWindow::deleteItem);
@@ -403,9 +422,108 @@ void PurchaseWindow::setupUI()
             this, &PurchaseWindow::onSupplierChanged);
 
     connect(m_supplierStatBtn, &QPushButton::clicked, this, [this](){
-        QMessageBox::information(this,
-            QString::fromUtf8("كشف الحساب"),
-            QString::fromUtf8("المجهز: ") + m_supplierCombo->currentText());
+        int suppId = m_supplierCombo->currentData().toInt();
+        if (suppId <= 0) {
+            QMessageBox::warning(this, "", QString::fromUtf8("اختر المجهز أولاً"));
+            return;
+        }
+        // Fetch supplier info
+        QString suppName = m_supplierCombo->currentText();
+        double balD = 0, balDn = 0;
+        {
+            QSqlQuery q;
+            q.prepare("SELECT balance_dollar, balance_dinar FROM customers WHERE id=?");
+            q.addBindValue(suppId); q.exec();
+            if (q.next()) { balD = q.value(0).toDouble(); balDn = q.value(1).toDouble(); }
+        }
+        // Determine statement currency from active combo
+        bool useDinar = (m_currencyCombo->currentText() == QString::fromUtf8("دينار"));
+        double rate = m_exchangeRateEdit->text().toDouble();
+        if (rate <= 0) rate = Database::getExchangeRate();
+
+        // Build HTML table
+        QString html;
+        html += "<html><head><meta charset='utf-8'>"
+                "<style>body{font-family:Tahoma,Arial;direction:rtl;}"
+                "h2{text-align:center;color:#003366;}table{width:100%;border-collapse:collapse;}"
+                "th{background:#1a3a6a;color:white;padding:5px 8px;font-size:10pt;}"
+                "td{border:1px solid #aaa;padding:4px 8px;text-align:center;font-size:9pt;}"
+                "tr:nth-child(even){background:#f0f4ff;}"
+                ".deb{color:#cc0000;font-weight:bold;}"
+                ".cred{color:#007700;font-weight:bold;}"
+                ".bal{background:#ffffc0;font-weight:bold;}"
+                "</style></head><body>";
+        html += QString("<h2>%1 — %2</h2>").arg(
+            QString::fromUtf8("كشف حساب مجهز"),
+            suppName.toHtmlEscaped());
+
+        QString sym = useDinar ? QString::fromUtf8("دينار") : "$";
+        html += QString("<table><thead><tr>"
+                        "<th>%1</th><th>%2</th><th>%3</th><th>%4</th><th>%5</th><th>%6</th><th>%7</th>"
+                        "</tr></thead><tbody>")
+                .arg(QString::fromUtf8("ت"),
+                     QString::fromUtf8("التاريخ"),
+                     QString::fromUtf8("نوع"),
+                     QString::fromUtf8("الدفع"),
+                     QString::fromUtf8("مدين ") + sym,
+                     QString::fromUtf8("دائن ") + sym,
+                     QString::fromUtf8("الرصيد ") + sym);
+
+        // Fetch purchase invoices for this supplier
+        QSqlQuery q;
+        q.prepare("SELECT pi.id, pi.date, pi.purchase_type, pi.payment_type, "
+                  "pi.total_dollar, pi.total_dinar, pi.discount_dollar, pi.discount_dinar, "
+                  "pi.paid_dollar, pi.paid_dinar "
+                  "FROM purchase_invoices pi "
+                  "WHERE pi.supplier_id=? ORDER BY pi.date, pi.id");
+        q.addBindValue(suppId);
+        q.exec();
+
+        double runBal = 0;
+        int seq = 1;
+        while (q.next()) {
+            double totD  = q.value(4).toDouble();
+            double totDn = q.value(5).toDouble();
+            double discD = q.value(6).toDouble();
+            double discDn= q.value(7).toDouble();
+            double paidD = q.value(8).toDouble();
+            double paidDn= q.value(9).toDouble();
+
+            double netD  = totD  - discD;
+            double netDn = totDn - discDn;
+            double delta = useDinar ? (paidDn - netDn) : (paidD - netD);
+            runBal += delta;
+
+            double debit  = (delta < 0) ? -delta : 0;   // we owe supplier
+            double credit = (delta > 0) ?  delta : 0;   // supplier owes us
+
+            html += QString("<tr><td>%1</td><td>%2</td><td>%3</td><td>%4</td>"
+                            "<td class='deb'>%5</td><td class='cred'>%6</td><td class='bal'>%7</td></tr>")
+                    .arg(seq++)
+                    .arg(q.value(1).toString())
+                    .arg(q.value(2).toString().toHtmlEscaped())
+                    .arg(q.value(3).toString().toHtmlEscaped())
+                    .arg(debit  > 0 ? QString::number(debit,  'f', useDinar ? 0 : 2) : "")
+                    .arg(credit > 0 ? QString::number(credit, 'f', useDinar ? 0 : 2) : "")
+                    .arg(QString::number(runBal, 'f', useDinar ? 0 : 2));
+        }
+
+        // Final balance row
+        double finalBal = useDinar ? balDn : balD;
+        QString balClass = (finalBal < 0) ? "deb" : "cred";
+        QString balNote  = (finalBal < 0)
+            ? QString::fromUtf8("(دين على المحل)")
+            : QString::fromUtf8("(بذمة المجهز)");
+        html += QString("<tr><td colspan='6' style='font-weight:bold;text-align:right;'>%1</td>"
+                        "<td class='%2'>%3 %4</td></tr>")
+                .arg(QString::fromUtf8("الرصيد الحالي:"))
+                .arg(balClass)
+                .arg(QString::number(finalBal, 'f', useDinar ? 0 : 2))
+                .arg(balNote);
+
+        html += "</tbody></table></body></html>";
+        m_printer->printPreview(this, html,
+            QString::fromUtf8("كشف حساب مجهز — ") + suppName);
     });
 }
 
@@ -656,33 +774,39 @@ void PurchaseWindow::saveInvoice()
         Database::addPurchaseItem(invId, prodId, qty, cost, wsD, retD, 0, 0, "");
     }
 
-    // ── Accounting logic ──
-    // Sign convention (per requirement):
-    //   آجل  → NEGATIVE: we owe the supplier  → balance -= net
-    //   نقدي → POSITIVE: we paid the supplier → balance += paid
-    QSqlQuery upd;
-    double netD  = totalDollar - (isDinar ? 0.0 : discount / rate);
-    double netDn = totalDinar  - (isDinar ? discount : 0.0);
-    if (netD  < 0) netD  = 0;
-    if (netDn < 0) netDn = 0;
-
-    if (payType == QString::fromUtf8("آجل")) {
-        // Deferred purchase: subtract from balance (we owe the supplier, negative)
-        upd.prepare("UPDATE customers SET balance_dollar = balance_dollar - ?,"
-                    " balance_dinar = balance_dinar - ? WHERE id=?");
-        upd.addBindValue(netD);
-        upd.addBindValue(netDn);
-        upd.addBindValue(suppId);
-        upd.exec();
-    } else {
-        // Cash purchase: add paid amount to balance (positive — we paid them)
-        upd.prepare("UPDATE customers SET balance_dollar = balance_dollar + ?,"
-                    " balance_dinar = balance_dinar + ? WHERE id=?");
-        upd.addBindValue(paidDollar);
-        upd.addBindValue(paidDinar);
-        upd.addBindValue(suppId);
-        upd.exec();
+    // ── Save totals, discount and paid amount to invoice record ──
+    {
+        QSqlQuery updInv;
+        updInv.prepare("UPDATE purchase_invoices SET "
+                       "total_dollar=?, total_dinar=?,"
+                       "discount_dollar=?, discount_dinar=?,"
+                       "paid_dollar=?, paid_dinar=? WHERE id=?");
+        updInv.addBindValue(totalDollar);
+        updInv.addBindValue(totalDinar);
+        updInv.addBindValue(isDinar ? 0.0     : discount);
+        updInv.addBindValue(isDinar ? discount : 0.0);
+        updInv.addBindValue(paidDollar);
+        updInv.addBindValue(paidDinar);
+        updInv.addBindValue(invId);
+        updInv.exec();
     }
+
+    // ── Accounting: unified delta formula ──────────────────────────
+    // new_balance = old_balance + paid - (total - discount)
+    // positive balance = supplier owes us (we overpaid or have credit)
+    // negative balance = we owe supplier (underpaid or deferred)
+    double discD  = isDinar ? 0.0     : discount;
+    double discDn = isDinar ? discount : 0.0;
+    double deltaD  = paidDollar - (totalDollar - discD);
+    double deltaDn = paidDinar  - (totalDinar  - discDn);
+
+    QSqlQuery upd;
+    upd.prepare("UPDATE customers SET balance_dollar = balance_dollar + ?,"
+                " balance_dinar = balance_dinar + ? WHERE id=?");
+    upd.addBindValue(deltaD);
+    upd.addBindValue(deltaDn);
+    upd.addBindValue(suppId);
+    upd.exec();
 
     m_currentInvoiceId = invId;
     m_invoiceNoSpin->setValue(invId);

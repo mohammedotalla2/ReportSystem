@@ -7,7 +7,6 @@
 #include <QLabel>
 #include <QDateEdit>
 #include <QSpinBox>
-#include <QTabWidget>
 #include <QTableWidget>
 #include <QHeaderView>
 #include "printmanager.h"
@@ -17,9 +16,10 @@ class CashBoxWindow : public QDialog {
 public:
     explicit CashBoxWindow(QWidget *parent = nullptr);
 private slots:
-    void onTypeChanged();
+    void onTypeChanged(int index);
     void onMainAccountChanged(int index);
     void calculateEquivalent();
+    void updateBalance();        // recompute projected balance when amounts change
     void saveTransaction();
     void newTransaction();
     void deleteTransaction();
@@ -27,82 +27,57 @@ private slots:
     void printReceipt();
     void exportPDF();
     void navigateFirst(); void navigatePrev();
-    void navigateNext(); void navigateLast();
-    void receiveFromCustomer();
-    void payToCustomer();
-
-    void searchDailyReport();
-    void searchVaultBalance(const QString &currency);
-    void searchExchangeRates();
-    void searchAccountsLedger();
-    void searchDiscounts();
+    void navigateNext();  void navigateLast();
 
 private:
     void setupUI();
     void applyStyles();
     void loadTransaction(int id);
     void clearForm();
+    void refreshBalanceDisplay();   // fetch current balance from DB and show it
 
-    QWidget* createTab1DailyReport();
-    QWidget* createTab2VaultBalance();
-    QWidget* createTab3ExchangeRates();
-    QWidget* createTab4AccountsLedger();
-    QWidget* createTab5Discounts();
+    // ── Transaction type combo ──
+    QComboBox  *m_typeCombo;
 
-    // Tab widget
-    QTabWidget *m_tabs;
+    // ── Date (compact: day / month / year) ──
+    QDateEdit  *m_dateDay, *m_dateMonth, *m_dateYear;
 
-    // ── Tab 0: existing transaction entry ──
-    // Header
-    QComboBox *m_typeCombo;
-    QLabel *m_timeLabel;
-    QSpinBox *m_organiserSpin;
-    QDateEdit *m_dateDay, *m_dateMonth, *m_dateYear;
-    QLineEdit *m_docNoEdit;
-    // Accounts
-    QComboBox *m_mainAccountCombo, *m_subAccountCombo;
-    // Balances
-    QLineEdit *m_prevBalDollarEdit, *m_prevBalDinarEdit;
-    QLineEdit *m_prevCustDollarEdit, *m_prevCustDinarEdit;
-    // Amounts
-    QLineEdit *m_amountDollarEdit, *m_amountDinarEdit;
-    QLineEdit *m_equivDinarEdit, *m_equivDollarEdit;
+    // ── Header fields ──
+    QLineEdit  *m_docNoEdit;
+    QSpinBox   *m_organiserSpin;
+    QLabel     *m_timeLabel;
+
+    // ── Accounts ──
+    QComboBox  *m_mainAccountCombo, *m_subAccountCombo;
+
+    // ── Customer section (hidden unless main account = عملاء/موردون) ──
+    QWidget    *m_customerWidget;
+    QComboBox  *m_customerCombo;
+    QLabel     *m_custBalDollarLabel, *m_custBalDinarLabel;
+
+    // ── Amounts ──
+    QLineEdit  *m_amountDollarEdit, *m_amountDinarEdit;
+    QLineEdit  *m_equivDinarEdit,   *m_equivDollarEdit;
     QPushButton *m_equivBtn;
-    // Direction/cashbox
-    QComboBox *m_cashboxCombo, *m_directionCombo;
-    QLineEdit *m_exchangeRateEdit;
-    QComboBox *m_purchaseListCombo;
-    QLineEdit *m_notesEdit, *m_organiserEdit;
-    // Navigation/toolbar
-    QPushButton *m_saveBtn, *m_editBtn, *m_undoBtn, *m_searchBtn;
-    QPushButton *m_deleteBtn, *m_printBtn, *m_pdfBtn;
+
+    // ── Exchange rate / cashbox ──
+    QLineEdit  *m_exchangeRateEdit;
+    QComboBox  *m_cashboxCombo;
+
+    // ── Notes ──
+    QLineEdit  *m_notesEdit;
+
+    // ── Balance display (top panel) ──
+    QLabel     *m_curBalDollarLabel, *m_curBalDinarLabel;
+    QLabel     *m_projBalDollarLabel, *m_projBalDinarLabel;
+
+    // ── Toolbar buttons ──
+    QPushButton *m_saveBtn, *m_searchBtn, *m_deleteBtn;
+    QPushButton *m_printBtn, *m_pdfBtn;
     QPushButton *m_firstBtn, *m_prevBtn, *m_nextBtn, *m_lastBtn;
-    QPushButton *m_receiveBtn, *m_payBtn;
-    QLabel *m_navLabel, *m_totalLabel;
+    QLabel      *m_navLabel, *m_totalLabel;
+
     int m_currentId;
     PrintManager *m_printer;
-
-    // Tab 1 - Daily Report
-    QDateEdit    *m_drFromDate, *m_drToDate;
-    QLineEdit    *m_drCustomerEdit;
-    QTableWidget *m_drTable;
-    QLabel       *m_drNetDollar, *m_drNetDinar, *m_drTotalDollar, *m_drTotalDinar;
-
-    // Tab 2 - Vault Balance
-    QDateEdit    *m_vbFromDate, *m_vbToDate;
-    QTableWidget *m_vbTable;
-
-    // Tab 3 - Exchange Rates
-    QDateEdit    *m_erFromDate, *m_erToDate;
-    QTableWidget *m_erTable;
-
-    // Tab 4 - Accounts Ledger
-    QTabWidget   *m_alSubTabs;
-    QTableWidget *m_alReceiptsTable, *m_alPaymentsTable;
-    QLabel       *m_alReceiptsTotal, *m_alPaymentsTotal;
-
-    // Tab 5 - Discounts
-    QDateEdit    *m_discFromDate, *m_discToDate;
-    QTableWidget *m_discTable;
 };
 #endif
