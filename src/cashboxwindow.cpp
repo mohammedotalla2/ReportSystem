@@ -672,6 +672,46 @@ void CashBoxWindow::saveTransaction()
         m_navLabel->setText(QString::number(id));
         // Refresh balance display
         refreshBalanceDisplay();
+
+        // Update customer balance when type is صرف(0) or قبض(1) and main account is عملاء
+        if ((type == 0 || type == 1) &&
+            mainAcct == QString::fromUtf8("عملاء")) {
+            int custId = m_customerCombo->currentData().toInt();
+            if (custId > 0) {
+                QSqlQuery custUpd;
+                if (type == 1) {
+                    // قبض — customer pays us → their debt decreases
+                    custUpd.prepare("UPDATE customers SET "
+                                    "balance_dollar = balance_dollar - ?, "
+                                    "balance_dinar  = balance_dinar  - ? "
+                                    "WHERE id=?");
+                } else {
+                    // صرف — we pay customer → their balance increases (less debt / credit)
+                    custUpd.prepare("UPDATE customers SET "
+                                    "balance_dollar = balance_dollar + ?, "
+                                    "balance_dinar  = balance_dinar  + ? "
+                                    "WHERE id=?");
+                }
+                custUpd.addBindValue(amtDollar);
+                custUpd.addBindValue(amtDinar);
+                custUpd.addBindValue(custId);
+                custUpd.exec();
+
+                // Refresh customer balance labels
+                QSqlQuery qbal;
+                qbal.prepare("SELECT balance_dollar, balance_dinar FROM customers WHERE id=?");
+                qbal.addBindValue(custId);
+                qbal.exec();
+                if (qbal.next()) {
+                    m_custBalDollarLabel->setText(
+                        "$: " + QString::number(qbal.value(0).toDouble(), 'f', 2));
+                    m_custBalDinarLabel->setText(
+                        QString::fromUtf8("د: ") +
+                        QString::number(qbal.value(1).toDouble(), 'f', 0));
+                }
+            }
+        }
+
         QMessageBox::information(this,
             QString::fromUtf8("تم"),
             QString::fromUtf8("تم حفظ الحركة رقم: ") + QString::number(id));
