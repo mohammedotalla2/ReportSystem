@@ -154,7 +154,11 @@ bool Database::createTables()
     q.exec("ALTER TABLE products ADD COLUMN reorder_level REAL DEFAULT 0");
     q.exec("ALTER TABLE products ADD COLUMN cost_price_dinar REAL DEFAULT 0");
     q.exec("ALTER TABLE products ADD COLUMN exchange_rate_at_add REAL DEFAULT 1450");
-    // customer type column already supports integer; 2 = زبون ومجهز (no schema change needed)
+    // purchase_invoices: add discount, paid, and total columns for reporting
+    q.exec("ALTER TABLE purchase_invoices ADD COLUMN discount_dollar REAL DEFAULT 0");
+    q.exec("ALTER TABLE purchase_invoices ADD COLUMN discount_dinar REAL DEFAULT 0");
+    q.exec("ALTER TABLE purchase_invoices ADD COLUMN paid_dollar REAL DEFAULT 0");
+    q.exec("ALTER TABLE purchase_invoices ADD COLUMN paid_dinar REAL DEFAULT 0");
 
     if (q.lastError().isValid()) {
         // ALTER TABLE errors are expected if columns already exist – clear error
