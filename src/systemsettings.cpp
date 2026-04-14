@@ -33,7 +33,24 @@ SystemSettings::SystemSettings(QWidget *parent) : QDialog(parent),
     m_companyNameEdit->setText(Database::getCompanyName());
     m_exchangeRateSpin->setValue(Database::getExchangeRate());
 
-    connect(m_tabs, &QTabWidget::currentChanged, this, &SystemSettings::onTabChanged);
+    // Populate live treasury balances
+    auto refreshLiveBal = [this]() {
+        QSqlQuery q;
+        q.exec("SELECT "
+               "SUM(CASE WHEN type IN (1,2) THEN amount_dollar ELSE -amount_dollar END),"
+               "SUM(CASE WHEN type IN (1,3) THEN amount_dinar  ELSE -amount_dinar  END) "
+               "FROM cash_transactions");
+        double balD = 0, balDn = 0;
+        if (q.next()) { balD = q.value(0).toDouble(); balDn = q.value(1).toDouble(); }
+        m_liveBalDollarLabel->setText(QString::number(balD,  'f', 2));
+        m_liveBalDinarLabel->setText(QString::number(balDn, 'f', 0));
+    };
+    refreshLiveBal();
+
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this, refreshLiveBal](int idx) {
+        onTabChanged(idx);
+        if (idx == 0) refreshLiveBal();   // refresh balances when settings tab shown
+    });
 }
 
 // ── Static helper ──────────────────────────────────────────────────────────
@@ -126,7 +143,58 @@ void SystemSettings::setupUI()
     settingsLayout->addWidget(m_cashboxDollarEdit,                                      2, 1);
     settingsLayout->addWidget(makeLabel(QString::fromUtf8("رصيد الصندوق الأولي دينار:")), 3, 0);
     settingsLayout->addWidget(m_cashboxDinarEdit,                                       3, 1);
-    settingsLayout->setRowStretch(4, 1);
+
+    // ── Live treasury balance card ────────────────────────────────
+    QWidget *balCard = new QWidget;
+    balCard->setObjectName("balCard");
+    QVBoxLayout *balCardVL = new QVBoxLayout(balCard);
+    balCardVL->setContentsMargins(14, 10, 14, 10);
+    balCardVL->setSpacing(8);
+
+    QLabel *balCardTitle = new QLabel(QString::fromUtf8("رصيد الخزانة الحالي"));
+    balCardTitle->setObjectName("balCardTitle");
+    balCardTitle->setFont(QFont("Tahoma", 10, QFont::Bold));
+    balCardTitle->setAlignment(Qt::AlignCenter);
+    balCardVL->addWidget(balCardTitle);
+
+    // Two side-by-side tiles (dollar | dinar)
+    QHBoxLayout *tilesRow = new QHBoxLayout;
+    tilesRow->setSpacing(16);
+
+    auto makeTile = [](const QString &titleText, const QString &objName) -> QWidget* {
+        QWidget *tile = new QWidget;
+        tile->setObjectName(objName);
+        QVBoxLayout *tl = new QVBoxLayout(tile);
+        tl->setContentsMargins(12, 10, 12, 10);
+        tl->setSpacing(4);
+        QLabel *ttl = new QLabel(titleText);
+        ttl->setObjectName("tileTitle");
+        ttl->setFont(QFont("Tahoma", 9, QFont::Bold));
+        ttl->setAlignment(Qt::AlignCenter);
+        tl->addWidget(ttl);
+        return tile;
+    };
+
+    QWidget *dollarTile = makeTile(QString::fromUtf8("الدولار  $"), "dollarTile");
+    m_liveBalDollarLabel = new QLabel("0.00");
+    m_liveBalDollarLabel->setObjectName("dollarBalLbl");
+    m_liveBalDollarLabel->setFont(QFont("Tahoma", 22, QFont::Bold));
+    m_liveBalDollarLabel->setAlignment(Qt::AlignCenter);
+    dollarTile->layout()->addWidget(m_liveBalDollarLabel);
+
+    QWidget *dinarTile = makeTile(QString::fromUtf8("الدينار  د"), "dinarTile");
+    m_liveBalDinarLabel = new QLabel("0");
+    m_liveBalDinarLabel->setObjectName("dinarBalLbl");
+    m_liveBalDinarLabel->setFont(QFont("Tahoma", 22, QFont::Bold));
+    m_liveBalDinarLabel->setAlignment(Qt::AlignCenter);
+    dinarTile->layout()->addWidget(m_liveBalDinarLabel);
+
+    tilesRow->addWidget(dollarTile);
+    tilesRow->addWidget(dinarTile);
+    balCardVL->addLayout(tilesRow);
+
+    settingsLayout->addWidget(balCard, 4, 0, 1, 2);
+    settingsLayout->setRowStretch(5, 1);
     settingsLayout->setColumnStretch(1, 1);
 
     m_tabs->addTab(settingsTab, QString::fromUtf8("الإعدادات العامة"));
@@ -435,6 +503,36 @@ void SystemSettings::applyStyles()
         QComboBox { background: white; border: 1px solid #99aacc; border-radius: 2px; }
         QLabel { font-family: Tahoma; color: #003366; }
         QGroupBox::title { font-family: Tahoma; color: #003366; font-weight: bold; }
+
+        /* ── Treasury balance card ── */
+        #balCard {
+            background: #f0f4ff;
+            border: 1px solid #c0ccee;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        #balCardTitle {
+            color: #1a3a6e;
+            font-size: 11pt;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #c0ccee;
+        }
+        #dollarTile {
+            background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+                stop:0 #1a6e44, stop:1 #124e30);
+            border-radius: 8px;
+            min-width: 160px;
+        }
+        #dinarTile {
+            background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+                stop:0 #1a3a9e, stop:1 #0d2266);
+            border-radius: 8px;
+            min-width: 160px;
+        }
+        #dollarTile .tileTitle, #dinarTile .tileTitle { /* fallback via objectName below */ }
+        #dollarBalLbl { color: #ffffff; font-size: 22pt; }
+        #dinarBalLbl  { color: #ffffff; font-size: 22pt; }
+        #tileTitle    { color: rgba(255,255,255,0.85); font-size: 9pt; }
     )");
 }
 
